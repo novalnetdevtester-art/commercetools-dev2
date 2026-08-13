@@ -9,14 +9,16 @@ import { requestContextPlugin } from "../libs/fastify/context/context";
 import { errorHandler } from "../libs/fastify/error-handler";
 
 export const setupFastify = async () => {
-  const server = Fastify({
-    logger: {
-      level: config.loggerLevel,
-    },
-    genReqId: () => randomUUID().toString(),
+const server = Fastify({
+  logger: {
+    level: config.loggerLevel,
+  },
+  genReqId: () => randomUUID().toString(),
+  logController: {
     requestIdLogLabel: "requestId",
-    requestIdHeader: "x-request-id",
-  });
+  },
+  requestIdHeader: "x-request-id",
+});
 
   server.setErrorHandler(errorHandler);
 
