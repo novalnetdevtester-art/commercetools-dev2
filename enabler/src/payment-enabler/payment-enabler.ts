@@ -169,7 +169,7 @@ export enum PaymentMethod {
   /* GuaranteedSepa */
   GuaranteedSepa = "GuaranteedSepa",
   /* TWINT */
-  twint = "twint",
+  twint = "TWINT",
   /* SEPA */
   sepa = "sepa",
   /* ACH */
