@@ -55,7 +55,7 @@ export class Paypal extends BaseComponent {
     try {
       const requestData: PaymentRequestSchemaDTO = {
         paymentMethod: {
-          type: this.paymentMethod,
+          type: 'PayPal',
         },
         paymentOutcome: PaymentOutcome.AUTHORIZED,
         lang: pathLocale,
