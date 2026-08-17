@@ -97,8 +97,16 @@ export const paymentRoutes = async (
     },
     async (request, reply) => {
       try {
+          log.info("Redirect payment request received", {
+          paymentMethod: request.body?.paymentMethod?.type,
+          paymentOutcome: request.body?.paymentOutcome,
+        });
         const resp = await opts.paymentService.createRedirectPayment({
           data: request.body,
+        });
+        log.info("Redirect payment response", {
+          transactionStatus: resp?.transactionStatus,
+          paymentReference: resp?.paymentReference,
         });
         return reply.status(200).send(resp);
       } catch (error) {
