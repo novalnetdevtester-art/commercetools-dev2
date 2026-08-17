@@ -110,7 +110,7 @@ export class Ideal extends BaseComponent {
         PaymentRequestSchemaDTO = {
 
         paymentMethod: {
-          type: 'IDEAL',
+          type: 'iDEAL | Wero',
         },
 
         paymentOutcome:
