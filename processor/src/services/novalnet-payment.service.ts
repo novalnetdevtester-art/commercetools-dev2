@@ -1102,7 +1102,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     hook: string,
     lang: SupportedLocale,
     params: Record<string, any>,
-  ): Promise<string> {
+  ): string {
     const locale = lang === "en" ? "en" : "de";
     return t(locale, hook, params);
   }
