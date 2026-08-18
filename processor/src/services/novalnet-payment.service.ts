@@ -592,7 +592,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     const parsedCart = typeof ctCart === "string" ? JSON.parse(ctCart) : ctCart;
     const dueDateValue = getPaymentDueDate(dueDate);
     const lang = String(request.data?.lang ?? "en") as SupportedLocale;
-    const orderNumber = getFutureOrderNumberFromContext();
+    const orderNumber = getFutureOrderNumberFromContext() ?? "";
     const transaction: Record<string, any> = {
       test_mode: Number(testMode) === 0 ? "0" : "1",
       payment_type: String(request.data.paymentMethod.type),
@@ -714,17 +714,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
         routing_number: String(request.data.paymentMethod.routingNumber),
       };
     }
-    if (
-      String(request.data.paymentMethod.type).toUpperCase() === "CREDITCARD"
-    ) {
-      if (enforce3d == "1") {
-        transaction.enforce_3d = 1;
-      }
-      transaction.payment_data = {
-        pan_hash: String(request.data.paymentMethod.panHash),
-        unique_id: String(request.data.paymentMethod.uniqueId),
-      };
-    }
+    
 
     const ctPayment = await this.ctPaymentService.createPayment({
       amountPlanned: await this.ctCartService.getPaymentAmount({
@@ -748,6 +738,46 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     });
 
     const pspReference = randomUUID().toString();
+    const processorURL = Context.getProcessorUrlFromContext();
+    const sessionId = Context.getCtSessionIdFromContext();
+
+    if (String(request.data.paymentMethod.type).toUpperCase() === "CREDITCARD") {
+      transaction.payment_data = {
+        pan_hash: String(
+          request.data.paymentMethod.panHash ?? "",
+        ),
+        unique_id: String(
+          request.data.paymentMethod.uniqueId ?? "",
+        ),
+      };
+
+      if (String(enforce3d) === "1") {
+        const {
+          returnUrl,
+          errorReturnUrl,
+        } =
+          this.createPaymentReturnUrls({
+            processorURL,
+            sessionId,
+            paymentReference: ctPayment.id,
+            orderNumber,
+            ctPaymentID: ctPayment.id,
+            pspReference,
+            lang,
+            path: String(
+              request.data?.path ?? "",
+            ),
+          });
+
+        transaction.enforce_3d = 1;
+
+        transaction.return_url =
+          returnUrl;
+
+        transaction.error_return_url =
+          errorReturnUrl;
+      }
+    }
 
     let firstName = "";
     let lastName = "";
@@ -2338,98 +2368,22 @@ public async createRedirectPayment(
         ?.lastName ?? "";
   }
 
-  /**
-   * --------------------------------------------------
-   * Return URLs
-   * --------------------------------------------------
-   */
-  const successUrl =
-    new URL(
-      "/success",
+  const {
+    returnUrl,
+    errorReturnUrl,
+  } =
+    this.createPaymentReturnUrls({
       processorURL,
-    );
-
-  successUrl.searchParams.append(
-    "paymentReference",
-    ctPaymentId,
-  );
-
-  successUrl.searchParams.append(
-    "ctsid",
-    sessionId,
-  );
-
-  successUrl.searchParams.append(
-    "orderNumber",
-    orderNumber,
-  );
-
-  successUrl.searchParams.append(
-    "ctPaymentID",
-    ctPaymentId,
-  );
-
-  successUrl.searchParams.append(
-    "pspReference",
-    pspReference,
-  );
-
-  successUrl.searchParams.append(
-    "lang",
-    lang,
-  );
-
-  successUrl.searchParams.append(
-    "path",
-    path,
-  );
-
-  const returnUrl =
-    successUrl.toString();
-
-  const failureUrl =
-    new URL(
-      "/failure",
-      processorURL,
-    );
-
-  failureUrl.searchParams.append(
-    "paymentReference",
-    ctPaymentId,
-  );
-
-  failureUrl.searchParams.append(
-    "ctsid",
-    sessionId,
-  );
-
-  failureUrl.searchParams.append(
-    "orderNumber",
-    orderNumber,
-  );
-
-  failureUrl.searchParams.append(
-    "ctPaymentID",
-    ctPaymentId,
-  );
-
-  failureUrl.searchParams.append(
-    "pspReference",
-    pspReference,
-  );
-
-  failureUrl.searchParams.append(
-    "lang",
-    lang,
-  );
-
-  failureUrl.searchParams.append(
-    "path",
-    path,
-  );
-
-  const errorReturnUrl =
-    failureUrl.toString();
+      sessionId,
+      paymentReference: ctPayment.id,
+      orderNumber,
+      ctPaymentID: ctPayment.id,
+      pspReference,
+      lang,
+      path: String(
+        request.data?.path ?? "",
+      ),
+    });
 
   /**
    * --------------------------------------------------
@@ -2812,6 +2766,114 @@ public async createRedirectPayment(
 
     return localizedTransactionComments;
   }
+
+  public createPaymentReturnUrls({
+  processorURL,
+  sessionId,
+  paymentReference,
+  orderNumber,
+  ctPaymentID,
+  pspReference,
+  lang,
+  path,
+}: {
+  processorURL: string;
+  sessionId: string;
+  paymentReference: string;
+  orderNumber: string;
+  ctPaymentID: string;
+  pspReference: string;
+  lang: string;
+  path: string;
+}): {
+  returnUrl: string;
+  errorReturnUrl: string;
+} {
+  const successUrl = new URL(
+    "/success",
+    processorURL,
+  );
+
+  successUrl.searchParams.set(
+    "paymentReference",
+    paymentReference,
+  );
+
+  successUrl.searchParams.set(
+    "ctsid",
+    sessionId,
+  );
+
+  successUrl.searchParams.set(
+    "orderNumber",
+    orderNumber,
+  );
+
+  successUrl.searchParams.set(
+    "ctPaymentID",
+    ctPaymentID,
+  );
+
+  successUrl.searchParams.set(
+    "pspReference",
+    pspReference,
+  );
+
+  successUrl.searchParams.set(
+    "lang",
+    lang,
+  );
+
+  successUrl.searchParams.set(
+    "path",
+    path,
+  );
+
+  const failureUrl = new URL(
+    "/failure",
+    processorURL,
+  );
+
+  failureUrl.searchParams.set(
+    "paymentReference",
+    paymentReference,
+  );
+
+  failureUrl.searchParams.set(
+    "ctsid",
+    sessionId,
+  );
+
+  failureUrl.searchParams.set(
+    "orderNumber",
+    orderNumber,
+  );
+
+  failureUrl.searchParams.set(
+    "ctPaymentID",
+    ctPaymentID,
+  );
+
+  failureUrl.searchParams.set(
+    "pspReference",
+    pspReference,
+  );
+
+  failureUrl.searchParams.set(
+    "lang",
+    lang,
+  );
+
+  failureUrl.searchParams.set(
+    "path",
+    path,
+  );
+
+  return {
+    returnUrl: successUrl.toString(),
+    errorReturnUrl: failureUrl.toString(),
+  };
+}
 
   public splitStreetByComma(street?: string): {
     streetName: string;
