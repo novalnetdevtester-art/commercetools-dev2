@@ -493,7 +493,11 @@ export class Creditcard extends BaseComponent {
 
       const data =
         await response.json();
-
+      
+      if(data?.txnSecret){
+        window.location.href = data.txnSecret;
+      }
+      
       console.log(
         "[CC] Direct payment response received",
         {
