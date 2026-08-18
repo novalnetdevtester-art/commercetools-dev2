@@ -872,6 +872,18 @@ export class NovalnetPaymentService extends AbstractPaymentService {
       throw new Error("Payment processing failed");
     }
     const parsedResponse = responseData;
+    if (String(request.data.paymentMethod.type).toUpperCase() === "CREDITCARD" && String(enforce3d) === "1" && parsedResponse?.result?.redirect_url ) {
+      log.info("enfore 3D", {
+        status: parsedResponse?.result?.status,
+        statusText: parsedResponse?.result?.status_text,
+        fullResponse: parsedResponse,
+      });
+     const redirectUrl =  parsedResponse?.result?.redirect_url;
+      return {
+      paymentReference: ctPayment.id,
+      txnSecret: redirectUrl,
+      };
+    }
     const statusCode = parsedResponse?.transaction?.status_code;
     const status = parsedResponse?.transaction?.status;
 
