@@ -883,7 +883,10 @@ export class NovalnetPaymentService extends AbstractPaymentService {
         paymentId: ctPayment.id,
         amount: ctPayment.amountPlanned,
         pspReference,
-        paymentMethod: paymentType,
+        paymentMethod: String(
+          parsedResponse?.transaction?.payment_type ??
+          request.data.paymentMethod.type
+        ),
       });
       
      const redirectUrl =  parsedResponse?.result?.redirect_url;
@@ -2307,43 +2310,12 @@ public async createRedirectPayment(
    * Create pending transaction
    * --------------------------------------------------
    */
-  const transactionComments =
-    `Novalnet Transaction ID: N/A\n` +
-    `Payment Type: N/A\n` +
-    `Status: N/A`;
-
-  await this.ctPaymentService.updatePayment({
-    id: ctPayment.id,
-
+  await this.createPendingPaymentTransaction({
+    paymentId: ctPayment.id,
+    amount: ctPayment.amountPlanned,
     pspReference,
-
-    paymentMethod:
-      request.data.paymentMethod.type,
-
-    transaction: {
-      type: "Authorization",
-
-      amount:
-        ctPayment.amountPlanned,
-
-      interactionId:
-        pspReference,
-
-      state: "Pending",
-
-      custom: {
-        type: {
-          typeId: "type",
-          key:
-            "novalnet-custom-field",
-        },
-
-        fields: {
-          transactionComments,
-        },
-      },
-    } as unknown as any,
-  } as any);
+    paymentMethod: request.data.paymentMethod.type,
+  });
 
   /**
    * --------------------------------------------------
@@ -2895,7 +2867,7 @@ public async createRedirectPayment(
   };
 }
   
-public async createPendingPaymentTransaction({
+private async createPendingPaymentTransaction({
   paymentId,
   amount,
   pspReference,
@@ -2905,7 +2877,12 @@ public async createPendingPaymentTransaction({
   amount: any;
   pspReference: string;
   paymentMethod: string;
-}) {
+}): Promise<void> {
+  const transactionComments =
+    `Novalnet Transaction ID: N/A\n` +
+    `Payment Type: ${paymentMethod}\n` +
+    `Status: Pending`;
+
   await this.ctPaymentService.updatePayment({
     id: paymentId,
     pspReference,
@@ -2915,7 +2892,16 @@ public async createPendingPaymentTransaction({
       amount,
       interactionId: pspReference,
       state: "Pending",
-    },
+      custom: {
+        type: {
+          typeId: "type",
+          key: "novalnet-custom-field",
+        },
+        fields: {
+          transactionComments,
+        },
+      },
+    } as any,
   } as any);
 }
 
