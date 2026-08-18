@@ -2124,216 +2124,667 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     };
   }
 
-  public async createRedirectPayment(
-    request: CreatePaymentRequest,
-  ): Promise<PaymentResponseSchemaDTO> {
-    const type = String(request.data?.paymentMethod?.type);
-    const lang = String(request.data?.lang);
-    const path = String(request.data?.path);
-    const config = getConfig();
-    await createTransactionCommentsType();
-    const { testMode, paymentAction } = getNovalnetConfigValues(type, config);
-    const cartId = getCartIdFromContext();
-    const ctCart = await this.ctCartService.getCart({
+public async createRedirectPayment(
+  request: CreatePaymentRequest,
+): Promise<PaymentResponseSchemaDTO> {
+  const type = String(
+    request.data?.paymentMethod?.type,
+  );
+
+  const lang = String(
+    request.data?.lang ?? "en",
+  );
+
+  const path = String(
+    request.data?.path ?? "",
+  );
+
+  const config = getConfig();
+
+  await createTransactionCommentsType();
+
+  const {
+    testMode,
+    paymentAction,
+    enforce3d,
+  } = getNovalnetConfigValues(
+    type,
+    config,
+  );
+
+  const cartId =
+    getCartIdFromContext();
+
+  const ctCart =
+    await this.ctCartService.getCart({
       id: cartId,
     });
 
-    const deliveryAddress = await this.ctcc(ctCart);
-    const billingAddress = await this.ctbb(ctCart);
-    const parsedCart = typeof ctCart === "string" ? JSON.parse(ctCart) : ctCart;
-    const processorURL = Context.getProcessorUrlFromContext();
-    const sessionId = Context.getCtSessionIdFromContext();
-    const paymentAmount = await this.ctCartService.getPaymentAmount({
+  const deliveryAddress =
+    await this.ctcc(ctCart);
+
+  const billingAddress =
+    await this.ctbb(ctCart);
+
+  const parsedCart =
+    typeof ctCart === "string"
+      ? JSON.parse(ctCart)
+      : ctCart;
+
+  const processorURL =
+    Context.getProcessorUrlFromContext();
+
+  const sessionId =
+    Context.getCtSessionIdFromContext();
+
+  const paymentAmount =
+    await this.ctCartService.getPaymentAmount({
       cart: ctCart,
     });
 
-    const deliveryStreet = this.splitStreetByComma(deliveryAddress?.streetName);
-    const billingStreet = this.splitStreetByComma(billingAddress?.streetName);
+  const deliveryStreet =
+    this.splitStreetByComma(
+      deliveryAddress?.streetName,
+    );
 
-    const deliveryAddressStreetName = deliveryStreet.streetName;
-    const deliveryAddressStreetNumber = deliveryStreet.streetNumber;
+  const billingStreet =
+    this.splitStreetByComma(
+      billingAddress?.streetName,
+    );
 
-    const billingAddressStreetName = billingStreet.streetName;
-    const billingAddressStreetNumber = billingStreet.streetNumber;
+  const deliveryAddressStreetName =
+    deliveryStreet.streetName;
 
-    const paymentInterface = getPaymentInterfaceFromContext() || "mock";
-    const ctPayment = await this.ctPaymentService.createPayment({
+  const deliveryAddressStreetNumber =
+    deliveryStreet.streetNumber;
+
+  const billingAddressStreetName =
+    billingStreet.streetName;
+
+  const billingAddressStreetNumber =
+    billingStreet.streetNumber;
+
+  const paymentInterface =
+    getPaymentInterfaceFromContext() ||
+    "mock";
+
+  /**
+   * --------------------------------------------------
+   * Create commercetools Payment
+   * --------------------------------------------------
+   */
+  const ctPayment =
+    await this.ctPaymentService.createPayment({
       amountPlanned: paymentAmount,
+
       paymentMethodInfo: {
         paymentInterface,
       },
+
       ...(ctCart.customerId && {
-        customer: { typeId: "customer", id: ctCart.customerId },
+        customer: {
+          typeId: "customer",
+          id: ctCart.customerId,
+        },
       }),
+
       ...(!ctCart.customerId &&
         ctCart.anonymousId && {
-          anonymousId: ctCart.anonymousId,
+          anonymousId:
+            ctCart.anonymousId,
         }),
     });
-    await this.ctCartService.addPayment({
-      resource: { id: ctCart.id, version: ctCart.version },
-      paymentId: ctPayment.id,
-    });
 
-    const transactionComments = `Novalnet Transaction ID: ${"N/A"}\nPayment Type: ${"N/A"}\nStatus: ${"N/A"}`;
-    const pspReference = randomUUID().toString();
+  await this.ctCartService.addPayment({
+    resource: {
+      id: ctCart.id,
+      version: ctCart.version,
+    },
 
-    const updatedPayment = await this.ctPaymentService.updatePayment({
-      id: ctPayment.id,
-      pspReference,
-      paymentMethod: request.data.paymentMethod.type,
-      transaction: {
-        type: "Authorization",
-        amount: ctPayment.amountPlanned,
-        interactionId: pspReference,
-        state: "Pending",
-        custom: {
-          type: {
-            typeId: "type",
-            key: "novalnet-custom-field",
-          },
-          fields: {
-            transactionComments,
-          },
+    paymentId: ctPayment.id,
+  });
+
+  /**
+   * --------------------------------------------------
+   * Create PSP reference
+   * --------------------------------------------------
+   */
+  const pspReference =
+    randomUUID().toString();
+
+  /**
+   * --------------------------------------------------
+   * Create pending transaction
+   * --------------------------------------------------
+   */
+  const transactionComments =
+    `Novalnet Transaction ID: N/A\n` +
+    `Payment Type: N/A\n` +
+    `Status: N/A`;
+
+  await this.ctPaymentService.updatePayment({
+    id: ctPayment.id,
+
+    pspReference,
+
+    paymentMethod:
+      request.data.paymentMethod.type,
+
+    transaction: {
+      type: "Authorization",
+
+      amount:
+        ctPayment.amountPlanned,
+
+      interactionId:
+        pspReference,
+
+      state: "Pending",
+
+      custom: {
+        type: {
+          typeId: "type",
+          key:
+            "novalnet-custom-field",
         },
-      } as unknown as any,
-    } as any);
 
-    const paymentRef = (updatedPayment as any)?.id ?? ctPayment.id;
-    const orderNumber = getFutureOrderNumberFromContext() ?? "";
-    const ctPaymentId = ctPayment.id;
-    let firstName = "";
-    let lastName = "";
+        fields: {
+          transactionComments,
+        },
+      },
+    } as unknown as any,
+  } as any);
 
-    if (ctCart.customerId) {
-      const customerRes = await projectApiRoot
+  /**
+   * --------------------------------------------------
+   * Customer name
+   * --------------------------------------------------
+   */
+  const orderNumber =
+    getFutureOrderNumberFromContext() ??
+    "";
+
+  const ctPaymentId =
+    ctPayment.id;
+
+  let firstName = "";
+  let lastName = "";
+
+  if (ctCart.customerId) {
+    const customerRes =
+      await projectApiRoot
         .customers()
-        .withId({ ID: ctCart.customerId })
+        .withId({
+          ID: ctCart.customerId,
+        })
         .get()
         .execute();
 
-      const ctCustomer: Customer = customerRes.body;
-      firstName = ctCustomer.firstName ?? "";
-      lastName = ctCustomer.lastName ?? "";
-    } else {
-      firstName = ctCart.shippingAddress?.firstName ?? "";
-      lastName = ctCart.shippingAddress?.lastName ?? "";
+    const ctCustomer =
+      customerRes.body;
+
+    firstName =
+      ctCustomer.firstName ?? "";
+
+    lastName =
+      ctCustomer.lastName ?? "";
+  } else {
+    firstName =
+      ctCart.shippingAddress
+        ?.firstName ?? "";
+
+    lastName =
+      ctCart.shippingAddress
+        ?.lastName ?? "";
+  }
+
+  /**
+   * --------------------------------------------------
+   * Return URLs
+   * --------------------------------------------------
+   */
+  const successUrl =
+    new URL(
+      "/success",
+      processorURL,
+    );
+
+  successUrl.searchParams.append(
+    "paymentReference",
+    ctPaymentId,
+  );
+
+  successUrl.searchParams.append(
+    "ctsid",
+    sessionId,
+  );
+
+  successUrl.searchParams.append(
+    "orderNumber",
+    orderNumber,
+  );
+
+  successUrl.searchParams.append(
+    "ctPaymentID",
+    ctPaymentId,
+  );
+
+  successUrl.searchParams.append(
+    "pspReference",
+    pspReference,
+  );
+
+  successUrl.searchParams.append(
+    "lang",
+    lang,
+  );
+
+  successUrl.searchParams.append(
+    "path",
+    path,
+  );
+
+  const returnUrl =
+    successUrl.toString();
+
+  const failureUrl =
+    new URL(
+      "/failure",
+      processorURL,
+    );
+
+  failureUrl.searchParams.append(
+    "paymentReference",
+    ctPaymentId,
+  );
+
+  failureUrl.searchParams.append(
+    "ctsid",
+    sessionId,
+  );
+
+  failureUrl.searchParams.append(
+    "orderNumber",
+    orderNumber,
+  );
+
+  failureUrl.searchParams.append(
+    "ctPaymentID",
+    ctPaymentId,
+  );
+
+  failureUrl.searchParams.append(
+    "pspReference",
+    pspReference,
+  );
+
+  failureUrl.searchParams.append(
+    "lang",
+    lang,
+  );
+
+  failureUrl.searchParams.append(
+    "path",
+    path,
+  );
+
+  const errorReturnUrl =
+    failureUrl.toString();
+
+  /**
+   * --------------------------------------------------
+   * Novalnet transaction
+   * --------------------------------------------------
+   */
+  const transaction: Record<
+    string,
+    any
+  > = {
+    test_mode:
+      Number(testMode) === 0
+        ? "0"
+        : "1",
+
+    payment_type:
+      type.toUpperCase(),
+
+    amount:
+      String(
+        parsedCart?.taxedPrice
+          ?.totalGross
+          ?.centAmount,
+      ),
+
+    currency:
+      String(
+        parsedCart?.taxedPrice
+          ?.totalGross
+          ?.currencyCode,
+      ),
+
+    return_url:
+      returnUrl,
+
+    error_return_url:
+      errorReturnUrl,
+
+    order_no:
+      orderNumber,
+  };
+
+  /**
+   * --------------------------------------------------
+   * CREDIT CARD
+   * --------------------------------------------------
+   *
+   * For credit card redirect payment,
+   * pan_hash and unique_id are mandatory.
+   *
+   * This is the same payment_data used
+   * by createDirectPayment().
+   */
+  if (
+    type.toUpperCase() ===
+    "CREDITCARD"
+  ) {
+    const panHash =
+      String(
+        request.data
+          .paymentMethod
+          ?.panHash ?? "",
+      );
+
+    const uniqueId =
+      String(
+        request.data
+          .paymentMethod
+          ?.uniqueId ?? "",
+      );
+
+    if (!panHash || !uniqueId) {
+      throw new Error(
+        "Credit card pan_hash or unique_id is missing",
+      );
     }
 
-    const url = new URL("/success", processorURL);
-    url.searchParams.append("paymentReference", paymentRef);
-    url.searchParams.append("ctsid", sessionId);
-    url.searchParams.append("orderNumber", orderNumber);
-    url.searchParams.append("ctPaymentID", ctPaymentId);
-    url.searchParams.append("pspReference", pspReference);
-    url.searchParams.append("lang", lang);
-    url.searchParams.append("path", path);
-    const returnUrl = url.toString();
+    /**
+     * Enable 3D Secure when configured.
+     */
+    if (enforce3d === "1") {
+      transaction.enforce_3d = 1;
+    }
 
-    const urlFailure = new URL("/failure", processorURL);
-    urlFailure.searchParams.append("paymentReference", paymentRef);
-    urlFailure.searchParams.append("ctsid", sessionId);
-    urlFailure.searchParams.append("orderNumber", orderNumber);
-    urlFailure.searchParams.append("ctPaymentID", ctPaymentId);
-    urlFailure.searchParams.append("pspReference", pspReference);
-    urlFailure.searchParams.append("lang", lang);
-    urlFailure.searchParams.append("path", path);
-    const errorReturnUrl = urlFailure.toString();
+    transaction.payment_data = {
+      pan_hash:
+        panHash,
 
-    const novalnetPayload = {
-      merchant: {
-        signature: String(getConfig()?.novalnetPrivateKey ?? ""),
-        tariff: String(getConfig()?.novalnetTariff ?? ""),
-      },
-      customer: {
-        billing: {
-          city: String(billingAddress?.city),
-          country_code: String(billingAddress?.country),
-          house_no: String(billingAddressStreetNumber),
-          street: String(billingAddressStreetName),
-          zip: String(billingAddress?.postalCode),
-        },
-        shipping: {
-          city: String(deliveryAddress?.city),
-          country_code: String(deliveryAddress?.country),
-          house_no: String(deliveryAddressStreetNumber),
-          street: String(deliveryAddressStreetName),
-          zip: String(deliveryAddress?.postalCode),
-        },
-        first_name: firstName,
-        last_name: lastName,
-        email: parsedCart.customerEmail,
-      },
-      transaction: {
-        test_mode: Number(testMode) === 0 ? "0" : "1",
-        payment_type: type.toUpperCase(),
-        amount: String(parsedCart?.taxedPrice?.totalGross?.centAmount),
-        currency: String(parsedCart?.taxedPrice?.totalGross?.currencyCode),
-        return_url: returnUrl,
-        error_return_url: errorReturnUrl,
-        order_no: orderNumber,
-      },
-      custom: {
-        input1: "ctpayment-id",
-        inputval1: String(ctPaymentId ?? "ctpayment-id not available"),
-        input2: "pspReference",
-        inputval2: String(pspReference ?? "0"),
-        input3: "lang",
-        inputval3: String(lang ?? "lang-no-longer-available"),
-      },
+      unique_id:
+        uniqueId,
     };
-    let parsedResponse: any = {};
-    try {
-      const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
-      const base64Key = btoa(accessKey);
-      const novalnetResponse = await fetch(
+  }
+
+  /**
+   * --------------------------------------------------
+   * Novalnet Payload
+   * --------------------------------------------------
+   */
+  const novalnetPayload = {
+    merchant: {
+      signature:
+        String(
+          getConfig()
+            ?.novalnetPrivateKey ??
+            "",
+        ),
+
+      tariff:
+        String(
+          getConfig()
+            ?.novalnetTariff ??
+            "",
+        ),
+    },
+
+    customer: {
+      billing: {
+        city:
+          String(
+            billingAddress?.city,
+          ),
+
+        country_code:
+          String(
+            billingAddress?.country,
+          ),
+
+        house_no:
+          String(
+            billingAddressStreetNumber,
+          ),
+
+        street:
+          String(
+            billingAddressStreetName,
+          ),
+
+        zip:
+          String(
+            billingAddress?.postalCode,
+          ),
+      },
+
+      shipping: {
+        city:
+          String(
+            deliveryAddress?.city,
+          ),
+
+        country_code:
+          String(
+            deliveryAddress?.country,
+          ),
+
+        house_no:
+          String(
+            deliveryAddressStreetNumber,
+          ),
+
+        street:
+          String(
+            deliveryAddressStreetName,
+          ),
+
+        zip:
+          String(
+            deliveryAddress?.postalCode,
+          ),
+      },
+
+      first_name:
+        firstName,
+
+      last_name:
+        lastName,
+
+      email:
+        parsedCart.customerEmail,
+    },
+
+    transaction,
+
+    custom: {
+      input1:
+        "ctpayment-id",
+
+      inputval1:
+        String(
+          ctPaymentId ??
+            "ctpayment-id not available",
+        ),
+
+      input2:
+        "pspReference",
+
+      inputval2:
+        String(
+          pspReference ?? "0",
+        ),
+
+      input3:
+        "lang",
+
+      inputval3:
+        String(
+          lang ??
+            "lang-no-longer-available",
+        ),
+    },
+  };
+
+  /**
+   * --------------------------------------------------
+   * Call Novalnet
+   * --------------------------------------------------
+   */
+  let parsedResponse: any = {};
+
+  try {
+    const accessKey =
+      String(
+        getConfig()
+          ?.novalnetPublicKey ??
+          "",
+      );
+
+    const base64Key =
+      btoa(accessKey);
+
+    const novalnetResponse =
+      await fetch(
         "https://payport.novalnet.de/v2/payment",
         {
           method: "POST",
+
           headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            "X-NN-Access-Key": base64Key,
+            "Content-Type":
+              "application/json",
+
+            Accept:
+              "application/json",
+
+            "X-NN-Access-Key":
+              base64Key,
           },
-          body: JSON.stringify(novalnetPayload),
+
+          body:
+            JSON.stringify(
+              novalnetPayload,
+            ),
         },
       );
-      if (!novalnetResponse.ok) {
-        throw new Error(`Novalnet API error: ${novalnetResponse.status}`);
-      }
-      parsedResponse = await novalnetResponse.json();
-    } catch (err) {
-      log.error("Failed to process payment with Novalnet:", err);
-      throw new Error("Payment initialization failed");
+
+    if (
+      !novalnetResponse.ok
+    ) {
+      throw new Error(
+        `Novalnet API error: ${novalnetResponse.status}`,
+      );
     }
 
-    // Check for Novalnet API errors
-    if (parsedResponse?.result?.status !== "SUCCESS") {
-      log.error("Novalnet API error - Status not SUCCESS:", {
-        status: parsedResponse?.result?.status,
-        statusText: parsedResponse?.result?.status_text,
-        fullResponse: parsedResponse,
-      });
-      throw new Error(
-        parsedResponse?.result?.status_text || "Payment initialization failed",
-      );
-    }
-    const redirectResult = parsedResponse?.result?.redirect_url;
-    const txnSecret = parsedResponse?.transaction?.txn_secret;
-    if (!txnSecret) {
-      log.error("No txn_secret in Novalnet response:", {
-        transaction: parsedResponse?.transaction,
-        fullResponse: parsedResponse,
-      });
-      throw new Error(
-        "Payment initialization failed - missing transaction secret",
-      );
-    }
-    return {
-      paymentReference: paymentRef,
-      txnSecret: redirectResult,
-    };
+    parsedResponse =
+      await novalnetResponse.json();
+  } catch (err) {
+    log.error(
+      "Failed to process redirect payment with Novalnet:",
+      err,
+    );
+
+    throw new Error(
+      "Payment initialization failed",
+    );
   }
+
+  /**
+   * --------------------------------------------------
+   * Validate Novalnet response
+   * --------------------------------------------------
+   */
+  if (
+    parsedResponse?.result
+      ?.status !== "SUCCESS"
+  ) {
+    log.error(
+      "Novalnet API error - Status not SUCCESS:",
+      {
+        status:
+          parsedResponse
+            ?.result
+            ?.status,
+
+        statusText:
+          parsedResponse
+            ?.result
+            ?.status_text,
+
+        fullResponse:
+          parsedResponse,
+      },
+    );
+
+    throw new Error(
+      parsedResponse
+        ?.result
+        ?.status_text ||
+        "Payment initialization failed",
+    );
+  }
+
+  /**
+   * --------------------------------------------------
+   * Get redirect URL
+   * --------------------------------------------------
+   */
+  const redirectUrl =
+    parsedResponse
+      ?.result
+      ?.redirect_url;
+
+  const txnSecret =
+    parsedResponse
+      ?.transaction
+      ?.txn_secret;
+
+  if (!txnSecret) {
+    log.error(
+      "No txn_secret in Novalnet response:",
+      {
+        transaction:
+          parsedResponse
+            ?.transaction,
+
+        fullResponse:
+          parsedResponse,
+      },
+    );
+
+    throw new Error(
+      "Payment initialization failed - missing transaction secret",
+    );
+  }
+
+  /**
+   * --------------------------------------------------
+   * Return redirect URL to frontend
+   * --------------------------------------------------
+   */
+  return {
+    paymentReference:
+      ctPaymentId,
+
+    txnSecret:
+      redirectUrl,
+  };
+}
 
   public async localcomments(hook: any, params: TransactionCommentParams) {
     const supportedLocales: SupportedLocale[] = ["en", "de"];
