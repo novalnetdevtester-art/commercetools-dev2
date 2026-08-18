@@ -10,6 +10,7 @@ export async function getOrderByOrderNumber(
       .withOrderNumber({ orderNumber })
       .get()
       .execute();
+    log.info("order object",response);
     return response.body;
   } catch (error) {
     log.error("Error fetching order by order number", { orderNumber, error });
