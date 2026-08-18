@@ -878,6 +878,14 @@ export class NovalnetPaymentService extends AbstractPaymentService {
         statusText: parsedResponse?.result?.status_text,
         fullResponse: parsedResponse,
       });
+      
+      await this.createPendingPaymentTransaction({
+        paymentId: ctPayment.id,
+        amount: ctPayment.amountPlanned,
+        pspReference,
+        paymentMethod: paymentType,
+      });
+      
      const redirectUrl =  parsedResponse?.result?.redirect_url;
       return {
       paymentReference: ctPayment.id,
@@ -2885,6 +2893,30 @@ public async createRedirectPayment(
     returnUrl: successUrl.toString(),
     errorReturnUrl: failureUrl.toString(),
   };
+}
+  
+public async createPendingPaymentTransaction({
+  paymentId,
+  amount,
+  pspReference,
+  paymentMethod,
+}: {
+  paymentId: string;
+  amount: any;
+  pspReference: string;
+  paymentMethod: string;
+}) {
+  await this.ctPaymentService.updatePayment({
+    id: paymentId,
+    pspReference,
+    paymentMethod,
+    transaction: {
+      type: "Authorization",
+      amount,
+      interactionId: pspReference,
+      state: "Pending",
+    },
+  } as any);
 }
 
   public splitStreetByComma(street?: string): {
