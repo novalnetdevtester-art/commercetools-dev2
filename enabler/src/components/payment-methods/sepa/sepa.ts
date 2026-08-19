@@ -3,181 +3,50 @@ import {
   PaymentComponent,
   PaymentComponentBuilder,
   PaymentMethod,
-} from "../../../payment-enabler/payment-enabler";
+} from '../../../payment-enabler/payment-enabler';
 
-import { BaseComponent } from "../../base";
+import { BaseComponent } from '../../base';
 
-import styles from "../../../style/style.module.scss";
-import buttonStyles from "../../../style/button.module.scss";
+import styles from '../../../style/style.module.scss';
+import buttonStyles from '../../../style/button.module.scss';
 
 import {
   PaymentOutcome,
   PaymentRequestSchemaDTO,
-} from "../../../dtos/novalnet-payment.dto";
+} from '../../../dtos/novalnet-payment.dto';
 
-import { BaseOptions } from "../../../payment-enabler/novalnet-payment-enabler";
+import { BaseOptions } from '../../../payment-enabler/novalnet-payment-enabler';
 
+/**
+ * Novalnet Utility CDN
+ */
 const NOVALNET_UTILITY_CDN =
-  "https://cdn.novalnet.de/js/v2/NovalnetUtility-1.1.2.js";
+  'https://cdn.novalnet.de/js/v2/NovalnetUtility-1.1.2.js';
 
+/**
+ * Global NovalnetUtility type
+ *
+ * Only the functions used by this payment enabler
+ * are defined here.
+ */
 declare global {
   interface Window {
     NovalnetUtility?: {
-      formatIban: (
-        event: KeyboardEvent | Event,
-        bicFieldId: string
-      ) => boolean | void;
+      setClientKey?: (clientKey: string) => boolean;
 
-      formatBic: (
-        event: KeyboardEvent | Event
-      ) => boolean | void;
+      formatIban?: (
+        event: Event,
+        bicId?: string
+      ) => void;
+
+      checkIban?: (event: Event) => boolean;
+
+      formatBic?: (event: Event) => boolean;
     };
   }
 }
 
-let novalnetUtilityPromise: Promise<void> | null = null;
-
-/**
- * Load Novalnet Utility CDN only once.
- */
-const loadNovalnetUtility = (): Promise<void> => {
-  console.log("[SEPA] Checking NovalnetUtility...");
-
-  if (window.NovalnetUtility) {
-    console.log(
-      "[SEPA] NovalnetUtility already available"
-    );
-
-    return Promise.resolve();
-  }
-
-  if (novalnetUtilityPromise) {
-    console.log(
-      "[SEPA] NovalnetUtility is already being loaded"
-    );
-
-    return novalnetUtilityPromise;
-  }
-
-  console.log(
-    "[SEPA] Loading NovalnetUtility CDN:",
-    NOVALNET_UTILITY_CDN
-  );
-
-  novalnetUtilityPromise = new Promise<void>(
-    (resolve, reject) => {
-      const existingScript =
-        document.querySelector(
-          `script[src="${NOVALNET_UTILITY_CDN}"]`
-        );
-
-      if (existingScript) {
-        console.log(
-          "[SEPA] NovalnetUtility script already exists in DOM"
-        );
-
-        if (window.NovalnetUtility) {
-          console.log(
-            "[SEPA] NovalnetUtility available from existing script"
-          );
-
-          resolve();
-
-          return;
-        }
-
-        existingScript.addEventListener(
-          "load",
-          () => {
-            console.log(
-              "[SEPA] Existing NovalnetUtility script loaded"
-            );
-
-            if (window.NovalnetUtility) {
-              resolve();
-            } else {
-              reject(
-                new Error(
-                  "NovalnetUtility loaded but is not available"
-                )
-              );
-            }
-          }
-        );
-
-        existingScript.addEventListener(
-          "error",
-          (error) => {
-            console.error(
-              "[SEPA] Existing NovalnetUtility script failed",
-              error
-            );
-
-            reject(
-              new Error(
-                "Failed to load Novalnet Utility"
-              )
-            );
-          }
-        );
-
-        return;
-      }
-
-      const script =
-        document.createElement("script");
-
-      script.src =
-        NOVALNET_UTILITY_CDN;
-
-      script.async = true;
-
-      script.onload = () => {
-        console.log(
-          "[SEPA] NovalnetUtility CDN loaded"
-        );
-
-        console.log(
-          "[SEPA] NovalnetUtility available:",
-          !!window.NovalnetUtility
-        );
-
-        if (window.NovalnetUtility) {
-          resolve();
-        } else {
-          reject(
-            new Error(
-              "NovalnetUtility loaded but is not available on window"
-            )
-          );
-        }
-      };
-
-      script.onerror = (error) => {
-        console.error(
-          "[SEPA] Failed to load NovalnetUtility CDN",
-          error
-        );
-
-        reject(
-          new Error(
-            "Failed to load Novalnet Utility CDN"
-          )
-        );
-      };
-
-      document.head.appendChild(
-        script
-      );
-    }
-  );
-
-  return novalnetUtilityPromise;
-};
-
-export class SepaBuilder
-  implements PaymentComponentBuilder
-{
+export class SepaBuilder implements PaymentComponentBuilder {
   public componentHasSubmit = true;
 
   constructor(
@@ -197,13 +66,11 @@ export class SepaBuilder
 export class Sepa extends BaseComponent {
   private showPayButton: boolean;
 
-  private ibanInput?: HTMLInputElement;
-
-  private bicInput?: HTMLInputElement;
-
-  private bicContainer?: HTMLElement;
-
-  private utilityReady = false;
+  /**
+   * Prevent loading the CDN multiple times.
+   */
+  private static utilityLoadPromise:
+    Promise<void> | null = null;
 
   constructor(
     baseOptions: BaseOptions,
@@ -216,128 +83,352 @@ export class Sepa extends BaseComponent {
     );
 
     this.showPayButton =
-      componentOptions?.showPayButton ??
-      false;
+      componentOptions?.showPayButton ?? false;
+
+    console.log(
+      '[SEPA] Constructor initialized',
+      {
+        showPayButton: this.showPayButton,
+        processorUrl: this.processorUrl,
+        sessionId: this.sessionId,
+        environment: this.environment,
+      }
+    );
+  }
+
+  /**
+   * Load Novalnet Utility CDN.
+   */
+  private loadNovalnetUtility(): Promise<void> {
+    /**
+     * Already available.
+     */
+    if (
+      typeof window.NovalnetUtility !== 'undefined'
+    ) {
+      console.log(
+        '[SEPA] NovalnetUtility already available'
+      );
+
+      return Promise.resolve();
+    }
+
+    /**
+     * Already loading.
+     */
+    if (
+      Sepa.utilityLoadPromise
+    ) {
+      console.log(
+        '[SEPA] NovalnetUtility loading already in progress'
+      );
+
+      return Sepa.utilityLoadPromise;
+    }
+
+    Sepa.utilityLoadPromise =
+      new Promise<void>(
+        (resolve, reject) => {
+          console.log(
+            '[SEPA] Loading NovalnetUtility CDN:',
+            NOVALNET_UTILITY_CDN
+          );
+
+          /**
+           * Avoid adding duplicate script.
+           */
+          const existingScript =
+            document.querySelector(
+              `script[src="${NOVALNET_UTILITY_CDN}"]`
+            ) as HTMLScriptElement | null;
+
+          if (existingScript) {
+            console.log(
+              '[SEPA] NovalnetUtility script already exists in DOM'
+            );
+
+            existingScript.addEventListener(
+              'load',
+              () => {
+                console.log(
+                  '[SEPA] NovalnetUtility CDN loaded'
+                );
+
+                resolve();
+              },
+              { once: true }
+            );
+
+            existingScript.addEventListener(
+              'error',
+              () => {
+                console.error(
+                  '[SEPA] Failed to load NovalnetUtility CDN'
+                );
+
+                reject(
+                  new Error(
+                    'Failed to load NovalnetUtility'
+                  )
+                );
+              },
+              { once: true }
+            );
+
+            return;
+          }
+
+          const script =
+            document.createElement('script');
+
+          script.src =
+            NOVALNET_UTILITY_CDN;
+
+          script.async = true;
+
+          script.onload = () => {
+            console.log(
+              '[SEPA] NovalnetUtility CDN loaded successfully',
+              {
+                utilityAvailable:
+                  typeof window.NovalnetUtility !==
+                  'undefined',
+              }
+            );
+
+            if (
+              typeof window.NovalnetUtility ===
+              'undefined'
+            ) {
+              reject(
+                new Error(
+                  'NovalnetUtility is not available after CDN load'
+                )
+              );
+
+              return;
+            }
+
+            resolve();
+          };
+
+          script.onerror = () => {
+            console.error(
+              '[SEPA] Failed to load NovalnetUtility CDN'
+            );
+
+            reject(
+              new Error(
+                'Failed to load NovalnetUtility CDN'
+              )
+            );
+          };
+
+          document.head.appendChild(
+            script
+          );
+        }
+      ).catch((error) => {
+        /**
+         * Allow another attempt if loading failed.
+         */
+        Sepa.utilityLoadPromise = null;
+
+        throw error;
+      });
+
+    return Sepa.utilityLoadPromise;
+  }
+
+  /**
+   * Initialize Novalnet Utility.
+   */
+  private async initializeNovalnetUtility(): Promise<void> {
+    try {
+      await this.loadNovalnetUtility();
+
+      console.log(
+        '[SEPA] Initializing NovalnetUtility',
+        {
+          utilityAvailable:
+            typeof window.NovalnetUtility !==
+            'undefined',
+        }
+      );
+
+      if (
+        !window.NovalnetUtility
+      ) {
+        console.error(
+          '[SEPA] NovalnetUtility unavailable'
+        );
+
+        return;
+      }
+
+      /**
+       * Get client key from processor.
+       */
+      const response =
+        await fetch(
+          this.processorUrl +
+            '/getconfig',
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json',
+
+              'X-Session-Id':
+                this.sessionId,
+            },
+          }
+        );
+
+      if (!response.ok) {
+        console.error(
+          '[SEPA] Failed to fetch Novalnet config',
+          {
+            status: response.status,
+          }
+        );
+
+        return;
+      }
+
+      const config =
+        await response.json();
+
+      console.log(
+        '[SEPA] Novalnet config received',
+        {
+          clientKeyAvailable:
+            !!config?.paymentReference,
+        }
+      );
+
+      const clientKey =
+        String(
+          config?.paymentReference ?? ''
+        );
+
+      if (!clientKey) {
+        console.error(
+          '[SEPA] Client key missing from config'
+        );
+
+        return;
+      }
+
+      if (
+        typeof window.NovalnetUtility
+          .setClientKey ===
+        'function'
+      ) {
+        const result =
+          window.NovalnetUtility
+            .setClientKey(
+              clientKey
+            );
+
+        console.log(
+          '[SEPA] NovalnetUtility.setClientKey() result:',
+          result
+        );
+      } else {
+        console.warn(
+          '[SEPA] setClientKey() is not available'
+        );
+      }
+    } catch (error) {
+      console.error(
+        '[SEPA] NovalnetUtility initialization failed',
+        error
+      );
+    }
   }
 
   mount(selector: string) {
     console.log(
-      "[SEPA] Mounting SEPA component",
+      '[SEPA] Mount started',
       {
         selector,
-        showPayButton:
-          this.showPayButton,
       }
     );
 
     /**
-     * Fix CommerceTools selector issue.
+     * Fix commercetools selector issue.
      */
     const safeSelector =
-      "#" +
+      '#' +
       CSS.escape(
-        selector.startsWith("#")
-          ? selector.substring(1)
-          : selector
+        selector.substring(1)
       );
 
     console.log(
-      "[SEPA] Safe selector:",
+      '[SEPA] Safe selector:',
       safeSelector
     );
 
     const container =
       document.querySelector(
         safeSelector
-      ) as HTMLElement | null;
+      );
 
     if (!container) {
       console.error(
-        "[SEPA] Container not found:",
+        '[SEPA] Container not found:',
         safeSelector
       );
 
       return;
     }
 
-    console.log(
-      "[SEPA] SEPA container found"
-    );
-
     /**
-     * Same behavior as existing implementation.
+     * Same behavior as iDEAL.
+     * Prevent radio button removal.
      */
     container.insertAdjacentHTML(
-      "afterbegin",
+      'afterbegin',
       this._getTemplate()
     );
 
-    /**
-     * Get SEPA form elements.
-     */
-    this.ibanInput =
-      container.querySelector(
-        "#nn_sepa_account_no"
-      ) as HTMLInputElement | null ??
-      undefined;
-
-    this.bicInput =
-      container.querySelector(
-        "#nn_sepa_bic"
-      ) as HTMLInputElement | null ??
-      undefined;
-
-    this.bicContainer =
-      container.querySelector(
-        "#nn_sepa_bic_container"
-      ) as HTMLElement | null ??
-      undefined;
-
     console.log(
-      "[SEPA] Form elements initialized",
-      {
-        ibanInputFound:
-          !!this.ibanInput,
-
-        bicInputFound:
-          !!this.bicInput,
-
-        bicContainerFound:
-          !!this.bicContainer,
-      }
+      '[SEPA] SEPA template inserted'
     );
 
     /**
-     * BIC is initially hidden.
-     */
-    this.hideBic();
-
-    /**
-     * Update current payment label.
+     * Update only current payment label.
      */
     setTimeout(() => {
       const paymentLabel =
         container.querySelector(
-          "label"
+          'label'
         );
 
       if (
         paymentLabel &&
         paymentLabel.textContent
           ?.toLowerCase()
-          .includes("sepa")
+          .includes('sepa')
       ) {
         paymentLabel.textContent =
-          "Direct Debit SEPA";
+          'Direct Debit SEPA';
 
         console.log(
-          "[SEPA] Payment label updated"
+          '[SEPA] Payment label updated'
         );
       }
     }, 100);
 
     /**
-     * Initialize Novalnet utility.
+     * Bind IBAN functionality.
+     */
+    this.bindIbanEvents();
+
+    /**
+     * Initialize Novalnet Utility.
      */
     void this.initializeNovalnetUtility();
 
@@ -346,395 +437,194 @@ export class Sepa extends BaseComponent {
      */
     if (this.showPayButton) {
       const button =
-        container.querySelector(
-          "#sepa-payment-button"
-        ) as HTMLButtonElement | null;
-
-      console.log(
-        "[SEPA] Pay button found:",
-        !!button
-      );
+        document.querySelector(
+          '#sepa-payment-button'
+        );
 
       if (button) {
-        button.addEventListener(
-          "click",
-          (event) => {
-            console.log(
-              "[SEPA] Pay Now button clicked"
-            );
+        console.log(
+          '[SEPA] Payment button found'
+        );
 
-            event.preventDefault();
+        button.addEventListener(
+          'click',
+          (e) => {
+            e.preventDefault();
+
+            console.log(
+              '[SEPA] Pay Now clicked'
+            );
 
             void this.submit();
           }
         );
-      }
-    }
-  }
-
-  /**
-   * Load Novalnet Utility and attach
-   * IBAN/BIC utility handlers.
-   */
-  private async initializeNovalnetUtility() {
-    console.log(
-      "[SEPA] Initializing NovalnetUtility..."
-    );
-
-    try {
-      await loadNovalnetUtility();
-
-      console.log(
-        "[SEPA] NovalnetUtility loaded successfully"
-      );
-
-      if (!window.NovalnetUtility) {
-        throw new Error(
-          "NovalnetUtility is not available"
-        );
-      }
-
-      console.log(
-        "[SEPA] Utility methods available:",
-        {
-          formatIban:
-            typeof window
-              .NovalnetUtility
-              .formatIban ===
-            "function",
-
-          formatBic:
-            typeof window
-              .NovalnetUtility
-              .formatBic ===
-            "function",
-        }
-      );
-
-      if (!this.ibanInput) {
+      } else {
         console.warn(
-          "[SEPA] IBAN input not found"
-        );
-
-        return;
-      }
-
-      /**
-       * IBAN keypress.
-       */
-      this.ibanInput.addEventListener(
-        "keypress",
-        (event) => {
-          console.log(
-            "[SEPA] IBAN keypress"
-          );
-
-          this.handleIban(event);
-        }
-      );
-
-      /**
-       * IBAN change.
-       */
-      this.ibanInput.addEventListener(
-        "change",
-        (event) => {
-          console.log(
-            "[SEPA] IBAN changed",
-            {
-              hasValue:
-                !!this.ibanInput
-                  ?.value
-                  ?.trim(),
-
-              length:
-                this.ibanInput
-                  ?.value
-                  ?.trim()
-                  .length ?? 0,
-            }
-          );
-
-          this.handleIban(event);
-        }
-      );
-
-      /**
-       * BIC handling.
-       */
-      if (this.bicInput) {
-        this.bicInput.addEventListener(
-          "keypress",
-          (event) => {
-            console.log(
-              "[SEPA] BIC keypress"
-            );
-
-            this.handleBic(event);
-          }
-        );
-
-        this.bicInput.addEventListener(
-          "change",
-          (event) => {
-            console.log(
-              "[SEPA] BIC changed",
-              {
-                hasValue:
-                  !!this.bicInput
-                    ?.value
-                    ?.trim(),
-
-                length:
-                  this.bicInput
-                    ?.value
-                    ?.trim()
-                    .length ?? 0,
-              }
-            );
-
-            this.handleBic(event);
-          }
+          '[SEPA] Payment button not found'
         );
       }
-
-      this.utilityReady = true;
-
-      console.log(
-        "[SEPA] NovalnetUtility initialization completed"
-      );
-
-      /**
-       * Apply utility to existing IBAN.
-       */
-      if (
-        this.ibanInput.value.trim()
-      ) {
-        console.log(
-          "[SEPA] Existing IBAN found, applying IBAN utility"
-        );
-
-        this.handleIban(
-          new Event("change")
-        );
-      }
-    } catch (error) {
-      console.error(
-        "[SEPA] Failed to initialize NovalnetUtility:",
-        error
-      );
     }
   }
 
   /**
-   * Handle IBAN using Novalnet utility.
+   * Bind IBAN input events.
+   *
+   * NovalnetUtility.formatIban() directly updates
+   * the IBAN field and BIC visibility.
+   *
+   * It does NOT return a boolean.
    */
-  private handleIban(
-    event: KeyboardEvent | Event
-  ) {
-    console.log(
-      "[SEPA] handleIban() called",
-      {
-        eventType:
-          event.type,
+  private bindIbanEvents() {
+    const ibanInput =
+      document.getElementById(
+        'nn_sepa_account_no'
+      ) as HTMLInputElement | null;
 
-        utilityAvailable:
-          !!window.NovalnetUtility,
-      }
-    );
-
-    if (!window.NovalnetUtility) {
+    if (!ibanInput) {
       console.warn(
-        "[SEPA] NovalnetUtility unavailable while handling IBAN"
+        '[SEPA] IBAN input not found'
       );
 
       return;
     }
 
-    try {
-      const result =
+    console.log(
+      '[SEPA] Binding IBAN events'
+    );
+
+    /**
+     * Handle IBAN changes.
+     */
+    const handleIban = (
+      event: Event
+    ) => {
+      const input =
+        event.target as HTMLInputElement;
+
+      console.log(
+        '[SEPA] IBAN changed',
+        {
+          eventType: event.type,
+          hasValue:
+            !!input?.value,
+          length:
+            input?.value?.length ?? 0,
+          value:
+            input?.value ?? '',
+        }
+      );
+
+      /**
+       * NovalnetUtility directly formats the IBAN
+       * and controls BIC visibility.
+       *
+       * Do NOT check the return value.
+       */
+      if (
+        window.NovalnetUtility &&
+        typeof window.NovalnetUtility
+          .formatIban ===
+          'function'
+      ) {
+        console.log(
+          '[SEPA] Calling NovalnetUtility.formatIban()'
+        );
+
         window.NovalnetUtility.formatIban(
           event,
-          "nn_sepa_bic"
+          'nn_sepa_bic'
         );
 
-      console.log(
-        "[SEPA] NovalnetUtility.formatIban() result:",
-        result
-      );
-
-      console.log(
-        "[SEPA] IBAN state:",
-        {
-          hasValue:
-            !!this.ibanInput
-              ?.value
-              ?.trim(),
-
-          length:
-            this.ibanInput
-              ?.value
-              ?.trim()
-              .length ?? 0,
-
-          bicCurrentlyVisible:
-            this.bicContainer
-              ?.style
-              .display !==
-            "none",
-        }
-      );
+        console.log(
+          '[SEPA] NovalnetUtility.formatIban() executed',
+          {
+            formattedIban:
+              input?.value ?? '',
+          }
+        );
+      } else {
+        console.warn(
+          '[SEPA] NovalnetUtility.formatIban() unavailable'
+        );
+      }
 
       /**
-       * If the Novalnet utility returns
-       * a boolean, use it for BIC visibility.
+       * Log BIC visibility after utility processing.
        */
-      if (
-        typeof result ===
-        "boolean"
-      ) {
-        console.log(
-          "[SEPA] Utility returned boolean. BIC visibility:",
-          result
-            ? "SHOW"
-            : "HIDE"
-        );
-
-        if (result) {
-          this.showBic();
-        } else {
-          this.hideBic();
-        }
-      } else {
-        console.log(
-          "[SEPA] Utility did not return a boolean; keeping current BIC visibility"
-        );
-      }
-    } catch (error) {
-      console.error(
-        "[SEPA] Novalnet IBAN utility error:",
-        error
-      );
-    }
-  }
-
-  /**
-   * Handle BIC using Novalnet utility.
-   */
-  private handleBic(
-    event: KeyboardEvent | Event
-  ) {
-    console.log(
-      "[SEPA] handleBic() called",
-      {
-        eventType:
-          event.type,
-
-        utilityAvailable:
-          !!window.NovalnetUtility,
-      }
-    );
-
-    if (!window.NovalnetUtility) {
-      console.warn(
-        "[SEPA] NovalnetUtility unavailable while handling BIC"
-      );
-
-      return;
-    }
-
-    try {
-      const result =
-        window.NovalnetUtility.formatBic(
-          event
-        );
+      const bicInput =
+        document.getElementById(
+          'nn_sepa_bic'
+        ) as HTMLInputElement | null;
 
       console.log(
-        "[SEPA] NovalnetUtility.formatBic() result:",
-        result
+        '[SEPA] BIC state after IBAN processing',
+        {
+          bicExists:
+            !!bicInput,
+
+          bicDisplay:
+            bicInput
+              ? bicInput.style.display
+              : 'not-found',
+
+          iban:
+            input?.value ?? '',
+        }
       );
-    } catch (error) {
-      console.error(
-        "[SEPA] Novalnet BIC utility error:",
-        error
-      );
-    }
-  }
+    };
 
-  /**
-   * Show BIC field.
-   */
-  private showBic() {
-    if (!this.bicContainer) {
-      console.warn(
-        "[SEPA] Cannot show BIC: container not found"
-      );
-
-      return;
-    }
-
-    this.bicContainer.style.display =
-      "flex";
-
-    console.log(
-      "[SEPA] BIC field: SHOWN"
+    /**
+     * Change event.
+     */
+    ibanInput.addEventListener(
+      'change',
+      handleIban
     );
-  }
 
-  /**
-   * Hide BIC field.
-   */
-  private hideBic() {
-    if (!this.bicContainer) {
-      console.warn(
-        "[SEPA] Cannot hide BIC: container not found"
-      );
+    /**
+     * Input event gives a better UX while typing.
+     */
+    ibanInput.addEventListener(
+      'input',
+      handleIban
+    );
 
-      return;
-    }
+    /**
+     * Keypress is supported by the original
+     * NovalnetUtility implementation.
+     */
+    ibanInput.addEventListener(
+      'keypress',
+      (event) => {
+        if (
+          window.NovalnetUtility &&
+          typeof window.NovalnetUtility
+            .checkIban ===
+            'function'
+        ) {
+          const result =
+            window.NovalnetUtility
+              .checkIban(
+                event
+              );
 
-    this.bicContainer.style.display =
-      "none";
+          console.log(
+            '[SEPA] NovalnetUtility.checkIban() result:',
+            result
+          );
 
-    console.log(
-      "[SEPA] BIC field: HIDDEN"
+          if (result === false) {
+            event.preventDefault();
+          }
+        }
+      }
     );
   }
 
   async submit() {
     console.log(
-      "[SEPA] Payment submission started"
+      '[SEPA] Submit started'
     );
-
-    /**
-     * Make sure utility is available.
-     */
-    if (!this.utilityReady) {
-      console.log(
-        "[SEPA] NovalnetUtility not ready, loading..."
-      );
-
-      try {
-        await loadNovalnetUtility();
-
-        this.utilityReady = true;
-
-        console.log(
-          "[SEPA] NovalnetUtility ready"
-        );
-      } catch (error) {
-        console.error(
-          "[SEPA] Failed to load utility before submit:",
-          error
-        );
-
-        this.onError(
-          "Payment form could not be initialized. Please try again."
-        );
-
-        return;
-      }
-    }
 
     /**
      * Init SDK.
@@ -746,7 +636,7 @@ export class Sepa extends BaseComponent {
 
     const pathLocale =
       window.location.pathname
-        .split("/")[1];
+        .split('/')[1];
 
     const url =
       new URL(
@@ -762,90 +652,82 @@ export class Sepa extends BaseComponent {
        */
       const accountHolderInput =
         document.getElementById(
-          "nn_account_holder"
-        ) as HTMLInputElement | null;
+          'nn_account_holder'
+        ) as HTMLInputElement;
 
       const ibanInput =
         document.getElementById(
-          "nn_sepa_account_no"
-        ) as HTMLInputElement | null;
+          'nn_sepa_account_no'
+        ) as HTMLInputElement;
 
       const bicInput =
         document.getElementById(
-          "nn_sepa_bic"
-        ) as HTMLInputElement | null;
+          'nn_sepa_bic'
+        ) as HTMLInputElement;
 
       const accountHolder =
-        accountHolderInput
-          ?.value
-          ?.trim() ?? "";
+        accountHolderInput?.value
+          ?.trim() ?? '';
 
+      /**
+       * Remove spaces before sending IBAN.
+       *
+       * NovalnetUtility formats it visually
+       * with spaces, but the payment request
+       * should contain the actual IBAN.
+       */
       const iban =
-        ibanInput
-          ?.value
-          ?.replace(
-            /\s+/g,
-            ""
-          )
-          .toUpperCase() ?? "";
+        ibanInput?.value
+          ?.replace(/\s/g, '')
+          ?.trim() ?? '';
 
       const bic =
-        bicInput
-          ?.value
-          ?.trim()
-          .toUpperCase() ?? "";
+        bicInput?.value
+          ?.replace(/\s/g, '')
+          ?.trim() ?? '';
 
       console.log(
-        "[SEPA] Form validation:",
+        '[SEPA] Form values',
         {
-          accountHolderPresent:
+          accountHolderAvailable:
             !!accountHolder,
 
-          ibanPresent:
+          ibanAvailable:
             !!iban,
 
           ibanLength:
             iban.length,
 
-          bicPresent:
+          bicAvailable:
             !!bic,
 
           bicLength:
             bic.length,
-
-          bicVisible:
-            this.bicContainer
-              ?.style
-              .display !==
-            "none",
         }
       );
 
       /**
-       * Account holder validation.
+       * Basic validation.
        */
       if (!accountHolder) {
         console.warn(
-          "[SEPA] Account holder validation failed"
+          '[SEPA] Account holder validation failed'
         );
 
         this.onError(
-          "Please enter account holder name"
+          'Please enter account holder name'
         );
 
         return;
       }
 
-      /**
-       * IBAN validation.
-       */
       if (!iban) {
         console.warn(
-          "[SEPA] IBAN validation failed"
+          '[SEPA] IBAN validation failed'
         );
 
         this.onError(
-          "Please enter IBAN"
+          'Please enter IBAN'
         );
 
         return;
@@ -853,14 +735,12 @@ export class Sepa extends BaseComponent {
 
       /**
        * Request payload.
-       *
-       * Existing business logic preserved.
        */
       const requestData:
         PaymentRequestSchemaDTO = {
         paymentMethod: {
           type:
-            "DIRECT_DEBIT_SEPA",
+            'DIRECT_DEBIT_SEPA',
 
           accHolder:
             accountHolder,
@@ -876,51 +756,35 @@ export class Sepa extends BaseComponent {
           PaymentOutcome.AUTHORIZED,
 
         lang:
-          pathLocale ?? "de",
+          pathLocale ?? 'de',
 
         path:
           baseSiteUrl,
       };
 
       console.log(
-        "[SEPA] Sending payment request",
+        '[SEPA] Payment request prepared',
         {
-          endpoint:
-            this.processorUrl +
-            "/directPayment",
-
           paymentMethod:
-            requestData
-              .paymentMethod
-              .type,
+            requestData.paymentMethod.type,
 
           paymentOutcome:
-            requestData
-              .paymentOutcome,
+            requestData.paymentOutcome,
 
-          language:
+          lang:
             requestData.lang,
 
-          accountHolderPresent:
-            !!requestData
-              .paymentMethod
-              .accHolder,
+          path:
+            requestData.path,
 
-          ibanPresent:
-            !!requestData
-              .paymentMethod
-              .iban,
-
+          /**
+           * Do not log complete IBAN/BIC.
+           */
           ibanLength:
-            requestData
-              .paymentMethod
-              .iban
-              ?.length,
+            iban.length,
 
-          bicPresent:
-            !!requestData
-              .paymentMethod
-              .bic,
+          bicProvided:
+            !!bic,
         }
       );
 
@@ -930,16 +794,15 @@ export class Sepa extends BaseComponent {
       const response =
         await fetch(
           this.processorUrl +
-            "/directPayment",
+            '/directPayment',
           {
-            method:
-              "POST",
+            method: 'POST',
 
             headers: {
-              "Content-Type":
-                "application/json",
+              'Content-Type':
+                'application/json',
 
-              "X-Session-Id":
+              'X-Session-Id':
                 this.sessionId,
             },
 
@@ -951,26 +814,26 @@ export class Sepa extends BaseComponent {
         );
 
       console.log(
-        "[SEPA] Processor response status:",
-        response.status
+        '[SEPA] Payment API response',
+        {
+          status:
+            response.status,
+
+          ok:
+            response.ok,
+        }
       );
 
       /**
-       * HTTP error.
+       * Validate response.
        */
       if (!response.ok) {
         const errorText =
           await response.text();
 
         console.error(
-          "[SEPA] Processor HTTP error:",
-          {
-            status:
-              response.status,
-
-            response:
-              errorText,
-          }
+          '[SEPA] HTTP error response:',
+          errorText
         );
 
         throw new Error(
@@ -978,25 +841,22 @@ export class Sepa extends BaseComponent {
         );
       }
 
-      /**
-       * Parse response.
-       */
       const data =
         await response.json();
 
       console.log(
-        "[SEPA] Processor response:",
+        '[SEPA] SEPA payment response:',
         data
       );
 
       /**
-       * Payment success.
+       * Success.
        */
       if (
         data?.paymentReference
       ) {
         console.log(
-          "[SEPA] Payment successful",
+          '[SEPA] Payment successful',
           {
             paymentReference:
               data.paymentReference,
@@ -1009,31 +869,23 @@ export class Sepa extends BaseComponent {
           paymentReference:
             data.paymentReference,
         });
+      } else {
+        console.error(
+          '[SEPA] Payment failed - paymentReference missing',
+          {
+            response:
+              data,
+          }
+        );
 
-        return;
+        this.onError(
+          data?.transactionStatusText ||
+            'Some error occurred. Please try again.'
+        );
       }
-
-      /**
-       * Payment failure.
-       */
-      console.warn(
-        "[SEPA] Payment failed",
-        {
-          transactionStatus:
-            data?.transactionStatus,
-
-          transactionStatusText:
-            data?.transactionStatusText,
-        }
-      );
-
-      this.onError(
-        data?.transactionStatusText ||
-          "Some error occurred. Please try again."
-      );
     } catch (e: any) {
       console.error(
-        "[SEPA] Submit error:",
+        '[SEPA] Submit error',
         {
           message:
             e?.message,
@@ -1041,13 +893,13 @@ export class Sepa extends BaseComponent {
           stack:
             e?.stack,
 
-          name:
-            e?.name,
+          error:
+            e,
         }
       );
 
       this.onError(
-        "Some error occurred. Please try again."
+        'Some error occurred. Please try again.'
       );
     }
   }
@@ -1068,7 +920,7 @@ export class Sepa extends BaseComponent {
             Pay Now
           </button>
         `
-        : "";
+        : '';
 
     return `
       <div
@@ -1131,6 +983,8 @@ export class Sepa extends BaseComponent {
                 border:1px solid #d4d4d4;
                 border-radius:6px;
                 font-size:15px;
+                width:100%;
+                box-sizing:border-box;
               "
             />
 
@@ -1165,13 +1019,15 @@ export class Sepa extends BaseComponent {
               id="nn_sepa_account_no"
               name="nn_sepa_account_no"
               autocomplete="off"
-              inputmode="text"
+              spellcheck="false"
               style="
                 padding:12px 14px;
                 border:1px solid #d4d4d4;
                 border-radius:6px;
                 font-size:15px;
                 text-transform:uppercase;
+                width:100%;
+                box-sizing:border-box;
               "
             />
 
@@ -1179,9 +1035,8 @@ export class Sepa extends BaseComponent {
 
           <!-- BIC -->
           <div
-            id="nn_sepa_bic_container"
             style="
-              display:none;
+              display:flex;
               flex-direction:column;
               width:100%;
             "
@@ -1204,13 +1059,14 @@ export class Sepa extends BaseComponent {
               id="nn_sepa_bic"
               name="nn_sepa_bic"
               autocomplete="off"
-              inputmode="text"
+              spellcheck="false"
               style="
                 padding:12px 14px;
                 border:1px solid #d4d4d4;
                 border-radius:6px;
                 font-size:15px;
-                text-transform:uppercase;
+                width:100%;
+                box-sizing:border-box;
               "
             />
 
