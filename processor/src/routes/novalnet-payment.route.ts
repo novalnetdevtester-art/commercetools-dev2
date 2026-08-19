@@ -272,7 +272,7 @@ export const paymentRoutes = async (
     );
   
     const inline = String(
-      getConfig()?.novalnetCreditcardDisplayInlineCreditcardForm ?? "1",
+      getConfig()?.novalnetCreditcardDisplayInlineCreditcardForm ?? "0",
     );
   
     return reply.code(200).send({
