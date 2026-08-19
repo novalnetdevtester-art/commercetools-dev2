@@ -661,7 +661,7 @@ export class Creditcard extends BaseComponent {
     const res =
       await fetch(
         this.processorUrl +
-          "/getconfig",
+          "/getCreditcardConfig",
         {
           method: "POST",
           headers: {
@@ -685,7 +685,7 @@ export class Creditcard extends BaseComponent {
         await res.text();
 
       console.error(
-        "[CC] /getconfig failed:",
+        "[CC] /getCreditcardConfig failed:",
         errorText,
       );
 
