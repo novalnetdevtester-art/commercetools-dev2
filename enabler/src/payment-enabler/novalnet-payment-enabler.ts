@@ -118,12 +118,12 @@ export class NovalnetPaymentEnabler implements PaymentEnabler {
       paymentType = 'mbway';
     }
 
-    if (normalizedType.includes('invoice with payment guarantee') || normalizedType.includes('GuaranteedInvoice') || normalizedType.includes('Invoice with payment guarantee')) {
-      paymentType = 'GuaranteedInvoice';
+    if (normalizedType.includes('invoice with payment guarantee') || normalizedType.includes("guaranteedinvoice") || normalizedType.includes('GuaranteedInvoice') || normalizedType.includes('Invoice with payment guarantee')) {
+      paymentType = 'guaranteedinvoice';
     }
 
-    if (normalizedType.includes('direct debit sepa with payment guarantee') || normalizedType.includes('GuaranteedSepa') || normalizedType.includes('Direct Debit SEPA with payment guarantee')) {
-      paymentType = 'GuaranteedSepa';
+    if (normalizedType.includes('direct debit sepa with payment guarantee') || normalizedType.includes("guaranteedsepa") || normalizedType.includes('GuaranteedSepa') || normalizedType.includes('Direct Debit SEPA with payment guarantee')) {
+      paymentType = 'guaranteedsepa';
     }
 
     if (normalizedType.includes('postFinance card') || normalizedType.includes('postfinancecard') || normalizedType.includes('PostFinance Card')) {
