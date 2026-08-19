@@ -267,8 +267,18 @@ export const paymentRoutes = async (
   });
 
   fastify.post("/getconfig", async (req, reply) => {
-    const clientKey = String(getConfig()?.novalnetClientkey ?? "");
-    return reply.code(200).send({ paymentReference: clientKey });
+    const clientKey = String(
+      getConfig()?.novalnetClientkey ?? "",
+    );
+  
+    const inline = String(
+      getConfig()?.novalnetCreditcardDisplayInlineCreditcardForm ?? "1",
+    );
+  
+    return reply.code(200).send({
+      paymentReference: clientKey,
+      inline,
+    });
   });
 
   fastify.post<{ Body: PaymentRequestSchemaDTO }>(
