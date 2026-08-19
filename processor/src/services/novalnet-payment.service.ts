@@ -235,6 +235,11 @@ export class NovalnetPaymentService extends AbstractPaymentService {
               name: "transactionComments",
               value: transactionComments,
             },
+            {
+              action: "changeTransactionState",
+              transactionId: txId,
+              state: "Failure",
+            },
           ],
         },
       })
@@ -360,8 +365,8 @@ export class NovalnetPaymentService extends AbstractPaymentService {
       const tid = responseData?.transaction?.tid ?? "";
       const paymentType = responseData?.transaction?.payment_type ?? "";
       const isTestMode = responseData?.transaction?.test_mode == 1;
-      const status = responseData?.transaction?.status;
-      const state = this.getTransactionState(status);
+      const status = String(responseData?.transaction?.status ?? "").toUpperCase();
+      const { state, transactionType } = this.getTransactionStatus(status);
       const statusCode = responseData?.transaction?.status_code ?? "";
       const locale = lang === "en" ? "en" : "de";
       const transactionComments = [
@@ -375,10 +380,19 @@ export class NovalnetPaymentService extends AbstractPaymentService {
         pspReference,
         transactionComments,
         statusCode,
-        state,
+        state: status === "CANCELLED" ? "Failure" : state,
         appendComments: false,
         setCustomType: true,
         errorMessage: "Transaction not found for PSP reference",
+      });
+
+      await this.addSettlementTransactionIfRequired({
+        paymentId: parsedData.ctPaymentId,
+        pspReference,
+        amount: responseData?.transaction?.amount,
+        currency: responseData?.transaction?.currency,
+        transactionType,
+        status,
       });
 
       log.info("[transactionUpdate] Payment updated in CT", {
@@ -774,16 +788,8 @@ export class NovalnetPaymentService extends AbstractPaymentService {
       };
     }
     const statusCode = parsedResponse?.transaction?.status_code;
-    const status = parsedResponse?.transaction?.status;
-
-    const state =
-      status === "PENDING" || status === "ON_HOLD"
-        ? "Pending"
-        : status === "CONFIRMED"
-          ? "Success"
-          : status === "CANCELLED"
-            ? "Canceled"
-            : "Failure";
+    const status = String(parsedResponse?.transaction?.status ?? "").toUpperCase();
+    const { state, transactionType } = this.getTransactionStatus(status);
     const transactions = parsedResponse?.transaction;
     const amount = transactions?.amount;
     const tid = transactions?.tid;
@@ -839,7 +845,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
       pspReference,
       paymentMethod: request.data.paymentMethod.type,
       transaction: {
-        type: "Authorization",
+        type: transactionType,
         amount: ctPayment.amountPlanned,
         interactionId: pspReference,
         state: state,
@@ -1065,17 +1071,20 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     });
   }
 
-  private getTransactionState(status?: string): "Initial" | "Pending" | "Success" | "Canceled" | "Failure" {
-    switch (status) {
+  private getTransactionStatus(status?: string): {
+    state: "Initial" | "Pending" | "Success" | "Failure";
+    transactionType: "Authorization" | "Charge" | "CancelAuthorization";
+  } {
+    switch (String(status ?? "").toUpperCase()) {
       case "PENDING":
       case "ON_HOLD":
-        return "Pending";
+        return { state: "Pending", transactionType: "Authorization" };
       case "CONFIRMED":
-        return "Success";
+        return { state: "Success", transactionType: "Charge" };
       case "CANCELLED":
-        return "Canceled";
+        return { state: "Success", transactionType: "CancelAuthorization" };
       default:
-        return "Failure";
+        return { state: "Failure", transactionType: "Authorization" };
     }
   }
 
@@ -1102,7 +1111,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     hook: string,
     lang: SupportedLocale,
     params: Record<string, any>,
-  ): string {
+  ): Promise<string> {
     const locale = lang === "en" ? "en" : "de";
     return t(locale, hook, params);
   }
@@ -1123,7 +1132,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     pspReference: string;
     transactionComments: string;
     statusCode?: string;
-    state?: "Initial" | "Pending" | "Success" | "Canceled" | "Failure" | "Paid";
+    state?: "Initial" | "Pending" | "Success" | "Failure";
     appendComments?: boolean;
     setCustomType?: boolean;
     setStatusInterfaceCode?: boolean;
@@ -1196,22 +1205,37 @@ export class NovalnetPaymentService extends AbstractPaymentService {
   }: {
     webhook: any;
     transactionComments: string;
-    state?: "Initial" | "Pending" | "Success" | "Canceled" | "Failure";
+    state?: "Initial" | "Pending" | "Success" | "Failure";
     setStatusInterfaceCode?: boolean;
     changeTransactionState?: boolean;
   }) {
     const paymentId = webhook?.custom?.inputval1;
     const pspReference = webhook?.custom?.inputval2;
 
+    const status = String(webhook?.transaction?.status ?? "").toUpperCase();
+    const mapped = this.getTransactionStatus(status);
+    const effectiveState = state ?? mapped.state;
+
     await this.updatePaymentTransaction({
       paymentId,
       pspReference,
       transactionComments,
       statusCode: webhook?.transaction?.status_code,
-      state,
+      state: status === "CANCELLED" ? "Failure" : effectiveState,
       setStatusInterfaceCode,
       changeTransactionState,
     });
+
+    if (changeTransactionState) {
+      await this.addSettlementTransactionIfRequired({
+        paymentId,
+        pspReference,
+        amount: webhook?.transaction?.amount,
+        currency: webhook?.transaction?.currency,
+        transactionType: mapped.transactionType,
+        status,
+      });
+    }
 
     await this.syncPaymentToOrder(paymentId, pspReference);
     return transactionComments;
@@ -1293,7 +1317,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     return this.processWebhookTransaction({
       webhook,
       transactionComments,
-      state: "Success",
+      state: this.getTransactionStatus(webhook?.transaction?.status).state,
       setStatusInterfaceCode: true,
     });
   }
@@ -1306,7 +1330,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     return this.processWebhookTransaction({
       webhook,
       transactionComments,
-      state: this.getTransactionState(webhook?.transaction?.status),
+      state: this.getTransactionStatus(webhook?.transaction?.status).state,
       setStatusInterfaceCode: true,
     });
   }
@@ -1319,7 +1343,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     return this.processWebhookTransaction({
       webhook,
       transactionComments,
-      state: this.getTransactionState(webhook?.transaction?.status),
+      state: this.getTransactionStatus(webhook?.transaction?.status).state,
       setStatusInterfaceCode: true,
     });
   }
@@ -1435,7 +1459,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     await this.processWebhookTransaction({
       webhook,
       transactionComments,
-      state: this.getTransactionState(webhook?.transaction?.status),
+      state: this.getTransactionStatus(webhook?.transaction?.status).state,
       setStatusInterfaceCode: true,
     });
     return transactionComments;
@@ -1462,7 +1486,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     return this.processWebhookTransaction({
       webhook,
       transactionComments,
-      state: this.getTransactionState(webhook?.transaction?.status),
+      state: this.getTransactionStatus(webhook?.transaction?.status).state,
       setStatusInterfaceCode: true,
     });
   }
@@ -1488,7 +1512,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     return this.processWebhookTransaction({
       webhook,
       transactionComments,
-      state: this.getTransactionState(webhook?.transaction?.status),
+      state: this.getTransactionStatus(webhook?.transaction?.status).state,
       setStatusInterfaceCode: true,
     });
   }
@@ -1642,7 +1666,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
   public async updatePaymentStatusByPaymentId(
     paymentId: string,
     transactionId: string,
-    newState: "Initial" | "Pending" | "Success" | "Failure" | "Paid",
+    newState: "Initial" | "Pending" | "Success" | "Failure",
   ) {
     const paymentRes = await projectApiRoot
       .payments()
@@ -2412,6 +2436,80 @@ private async createPendingPaymentTransaction({
     },
   } as any);
 }
+
+  private async addSettlementTransactionIfRequired({
+    paymentId,
+    pspReference,
+    amount,
+    currency,
+    transactionType,
+    status,
+  }: {
+    paymentId: string;
+    pspReference: string;
+    amount?: string | number;
+    currency?: string;
+    transactionType: "Authorization" | "Charge" | "CancelAuthorization";
+    status: string;
+  }) {
+    if (transactionType === "Authorization") return;
+
+    const paymentRes = await projectApiRoot
+      .payments()
+      .withId({ ID: paymentId })
+      .get()
+      .execute();
+
+    const payment = paymentRes.body;
+    const interactionId = `${pspReference}-${transactionType}`;
+    const alreadyAdded = payment.transactions?.some(
+      (transaction) => transaction.interactionId === interactionId,
+    );
+
+    if (alreadyAdded) {
+      log.info("Settlement transaction already exists", {
+        paymentId,
+        transactionType,
+        interactionId,
+      });
+      return;
+    }
+
+    const transactionAmount = amount != null
+      ? {
+          centAmount: Number(amount),
+          currencyCode: String(currency ?? payment.amountPlanned.currencyCode),
+        }
+      : payment.amountPlanned;
+
+    await projectApiRoot
+      .payments()
+      .withId({ ID: paymentId })
+      .post({
+        body: {
+          version: payment.version,
+          actions: [
+            {
+              action: "addTransaction",
+              transaction: {
+                type: transactionType,
+                amount: transactionAmount,
+                interactionId,
+                state: "Success",
+              },
+            },
+          ],
+        },
+      })
+      .execute();
+
+    log.info("Settlement transaction added", {
+      paymentId,
+      pspReference,
+      transactionType,
+      status,
+    });
+  }
 
   public splitStreetByComma(street?: string): {
     streetName: string;
