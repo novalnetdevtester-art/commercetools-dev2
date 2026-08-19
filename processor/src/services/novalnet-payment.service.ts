@@ -198,57 +198,85 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     return customer;
   }
 
-  public async failureResponse({ data }: { data: any }) {
-    const parsedData = typeof data === "string" ? JSON.parse(data) : data;
-    log.info("[failureResponse] Processing payment failure", {
-      ctPaymentID: parsedData.ctPaymentID,
-      pspReference: parsedData.pspReference,
-    });
-    await createTransactionCommentsType();
-    const raw = await this.ctPaymentService.getPayment({
-      id: parsedData.ctPaymentID,
-    } as any);
-    const payment = (raw as any)?.body ?? raw;
-    const version = payment.version;
-    const tx = payment.transactions?.find(
-      (t: any) => t.interactionId === parsedData.pspReference,
-    );
-    if (!tx) throw new Error("Transaction not found");
-    const txId = tx.id;
-    if (!txId) throw new Error("Transaction missing id");
-    const transactionComments = `Novalnet Transaction ID: ${
-      parsedData.tid ?? "NN/A"
-    }\nPayment Type: ${parsedData.payment_type ?? "NN/A"}\n${
-      parsedData.status_text ?? "NN/A"
-    }`;
+public async failureResponse({ data }: { data: any }) {
+  const parsedData = typeof data === "string" ? JSON.parse(data) : data;
 
-    await projectApiRoot
-      .payments()
-      .withId({ ID: parsedData.ctPaymentID })
-      .post({
-        body: {
-          version,
-          actions: [
-            {
-              action: "setTransactionCustomField",
-              transactionId: txId,
-              name: "transactionComments",
-              value: transactionComments,
-            },
-            {
-              action: "changeTransactionState",
-              transactionId: txId,
-              state: "Failure",
-            },
-          ],
-        },
-      })
-      .execute();
-    log.info("[failureResponse] Payment failure comments saved", {
-      ctPaymentID: parsedData.ctPaymentID,
+  log.info("[failureResponse] Processing payment failure", {
+    ctPaymentID: parsedData.ctPaymentID,
+    pspReference: parsedData.pspReference,
+  });
+
+  await createTransactionCommentsType();
+
+  const raw = await this.ctPaymentService.getPayment({
+    id: parsedData.ctPaymentID,
+  } as any);
+
+  const payment = (raw as any)?.body ?? raw;
+  const version = payment.version;
+
+  const tx = payment.transactions?.find(
+    (t: any) => t.interactionId === parsedData.pspReference,
+  );
+
+  if (!tx) {
+    throw new Error("Transaction not found");
+  }
+
+  const txId = tx.id;
+
+  if (!txId) {
+    throw new Error("Transaction missing id");
+  }
+
+  const transactionComments = `Novalnet Transaction ID: ${
+    parsedData.tid ?? "NN/A"
+  }\nPayment Type: ${parsedData.payment_type ?? "NN/A"}\n${
+    parsedData.status_text ?? "NN/A"
+  }`;
+
+  const actions: PaymentUpdateAction[] = [];
+  
+  if (!tx.custom?.type) {
+    actions.push({
+      action: "setTransactionCustomType",
+      transactionId: txId,
+      type: {
+        key: "novalnet-custom-field",
+        typeId: "type",
+      },
     });
   }
 
+  actions.push({
+    action: "setTransactionCustomField",
+    transactionId: txId,
+    name: "transactionComments",
+    value: transactionComments,
+  });
+
+  actions.push({
+    action: "changeTransactionState",
+    transactionId: txId,
+    state: "Failure",
+  });
+
+  await projectApiRoot
+    .payments()
+    .withId({ ID: parsedData.ctPaymentID })
+    .post({
+      body: {
+        version,
+        actions,
+      },
+    })
+    .execute();
+
+  log.info("[failureResponse] Payment failure comments saved", {
+    ctPaymentID: parsedData.ctPaymentID,
+    transactionId: txId,
+  });
+}
   public async getConfigValues({ data }: { data: any }) {
     try {
       const clientKey = String(getConfig()?.novalnetClientkey ?? "");
@@ -1157,11 +1185,14 @@ export class NovalnetPaymentService extends AbstractPaymentService {
 
     const actions: PaymentUpdateAction[] = [];
 
-    if (setCustomType) {
+    if (setCustomType && !tx.custom?.type) {
       actions.push({
         action: "setTransactionCustomType",
         transactionId: tx.id,
-        type: { key: "novalnet-custom-field", typeId: "type" },
+        type: {
+          key: "novalnet-custom-field",
+          typeId: "type",
+        },
       });
     }
 
