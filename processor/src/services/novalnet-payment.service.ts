@@ -380,7 +380,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
         pspReference,
         transactionComments,
         statusCode,
-        state: status === "CANCELLED" ? "Failure" : state,
+        state,
         appendComments: false,
         setCustomType: true,
         errorMessage: "Transaction not found for PSP reference",
@@ -1082,7 +1082,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
       case "CONFIRMED":
         return { state: "Success", transactionType: "Charge" };
       case "CANCELLED":
-        return { state: "Success", transactionType: "CancelAuthorization" };
+        return { state: "Failure", transactionType: "CancelAuthorization" };
       default:
         return { state: "Failure", transactionType: "Authorization" };
     }
@@ -1111,7 +1111,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
     hook: string,
     lang: SupportedLocale,
     params: Record<string, any>,
-  ): Promise<string> {
+  ): string {
     const locale = lang === "en" ? "en" : "de";
     return t(locale, hook, params);
   }
@@ -1221,7 +1221,7 @@ export class NovalnetPaymentService extends AbstractPaymentService {
       pspReference,
       transactionComments,
       statusCode: webhook?.transaction?.status_code,
-      state: status === "CANCELLED" ? "Failure" : effectiveState,
+      state: effectiveState,
       setStatusInterfaceCode,
       changeTransactionState,
     });
