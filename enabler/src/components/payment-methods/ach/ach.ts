@@ -2,20 +2,20 @@ import {
   ComponentOptions,
   PaymentComponent,
   PaymentComponentBuilder,
-  PaymentMethod
+  PaymentMethod,
 } from '../../../payment-enabler/payment-enabler';
 
-import { BaseComponent } from "../../base";
+import { BaseComponent } from '../../base';
 
 import styles from '../../../style/style.module.scss';
-import buttonStyles from "../../../style/button.module.scss";
+import buttonStyles from '../../../style/button.module.scss';
 
 import {
   PaymentOutcome,
   PaymentRequestSchemaDTO,
-} from "../../../dtos/novalnet-payment.dto";
+} from '../../../dtos/novalnet-payment.dto';
 
-import { BaseOptions } from "../../../payment-enabler/novalnet-payment-enabler";
+import { BaseOptions } from '../../../payment-enabler/novalnet-payment-enabler';
 
 export class AchBuilder
   implements PaymentComponentBuilder {
@@ -54,15 +54,33 @@ export class Ach extends BaseComponent {
 
     this.showPayButton =
       componentOptions?.showPayButton ?? false;
+
+    console.log(
+      '[ACH] Constructor initialized',
+      {
+        showPayButton:
+          this.showPayButton,
+      }
+    );
   }
 
-  mount(selector: string) {
+  mount(
+    selector: string
+  ) {
+
+    console.log(
+      '[ACH] Mount started',
+      {
+        selector,
+      }
+    );
 
     /**
-     * Fix commercetools selector issue
+     * Fix commercetools selector issue.
      */
     const safeSelector =
-      '#' + CSS.escape(
+      '#' +
+      CSS.escape(
         selector.substring(1)
       );
 
@@ -74,7 +92,7 @@ export class Ach extends BaseComponent {
     if (!container) {
 
       console.error(
-        'Container not found:',
+        '[ACH] Container not found:',
         safeSelector
       );
 
@@ -82,57 +100,83 @@ export class Ach extends BaseComponent {
     }
 
     /**
-     * Same behavior as iDEAL
-     * Prevent radio button removal
+     * Same behavior as iDEAL.
+     * Prevent radio button removal.
      */
     container.insertAdjacentHTML(
-      "afterbegin",
+      'afterbegin',
       this._getTemplate()
     );
 
-    /**
-     * Update only current payment label
-     */
-    setTimeout(() => {
-
-      const paymentLabel =
-        container.querySelector(
-          'label'
-        );
-
-      if (
-        paymentLabel &&
-        paymentLabel.textContent
-          ?.toLowerCase()
-          .includes('ach')
-      ) {
-
-        paymentLabel.textContent =
-          'Direct Debit ACH';
-      }
-
-    }, 100);
+    console.log(
+      '[ACH] ACH template inserted'
+    );
 
     /**
-     * Bind button event
+     * Update only current payment label.
      */
-    if (this.showPayButton) {
+    setTimeout(
+      () => {
+
+        const paymentLabel =
+          container.querySelector(
+            'label'
+          );
+
+        if (
+          paymentLabel &&
+          paymentLabel.textContent
+            ?.toLowerCase()
+            .includes('ach')
+        ) {
+
+          paymentLabel.textContent =
+            'Direct Debit ACH';
+
+          console.log(
+            '[ACH] Payment label updated'
+          );
+        }
+      },
+      100
+    );
+
+    /**
+     * Bind payment button.
+     */
+    if (
+      this.showPayButton
+    ) {
 
       const button =
         document.querySelector(
-          "#achForm-paymentButton"
+          '#achForm-paymentButton'
         );
 
       if (button) {
 
+        console.log(
+          '[ACH] Payment button found'
+        );
+
         button.addEventListener(
-          "click",
-          (e) => {
+          'click',
+          (event) => {
 
-            e.preventDefault();
+            event.preventDefault();
 
-            this.submit();
+            console.log(
+              '[ACH] Pay Now clicked'
+            );
+
+            void this.submit();
           }
+        );
+
+      } else {
+
+        console.warn(
+          '[ACH] Payment button not found'
         );
       }
     }
@@ -140,64 +184,108 @@ export class Ach extends BaseComponent {
 
   async submit() {
 
+    console.log(
+      '[ACH] Submit started'
+    );
+
+    /**
+     * Initialize SDK.
+     */
     this.sdk.init({
-      environment: this.environment
+      environment:
+        this.environment,
     });
 
     const pathLocale =
-      window.location.pathname.split("/")[1];
-
-    const url =
-      new URL(window.location.href);
+      window.location.pathname
+        .split('/')[1] ?? 'en';
 
     const baseSiteUrl =
-      url.origin;
+      window.location.origin;
 
     try {
 
+      /**
+       * Get form fields.
+       */
       const accountHolderInput =
         document.getElementById(
           'achForm-accHolder'
-        ) as HTMLInputElement;
+        ) as HTMLInputElement | null;
 
       const accountNumberInput =
         document.getElementById(
           'achForm-accountNumber'
-        ) as HTMLInputElement;
+        ) as HTMLInputElement | null;
 
       const routingNumberInput =
         document.getElementById(
           'achForm-routingNumber'
-        ) as HTMLInputElement;
+        ) as HTMLInputElement | null;
 
       const accountHolder =
-        accountHolderInput?.value.trim() ?? '';
+        accountHolderInput
+          ?.value
+          ?.trim() ?? '';
 
       const accountNumber =
-        accountNumberInput?.value.trim() ?? '';
+        accountNumberInput
+          ?.value
+          ?.trim() ?? '';
 
       const routingNumber =
-        routingNumberInput?.value.trim() ?? '';
+        routingNumberInput
+          ?.value
+          ?.trim() ?? '';
 
-      // Validation
+      console.log(
+        '[ACH] Form validation',
+        {
+          accountHolderAvailable:
+            !!accountHolder,
+
+          accountNumberAvailable:
+            !!accountNumber,
+
+          routingNumberAvailable:
+            !!routingNumber,
+        }
+      );
+
+      /**
+       * Validate required fields.
+       *
+       * All three ACH fields are mandatory.
+       */
       if (
         !accountHolder ||
         !accountNumber ||
         !routingNumber
       ) {
 
+        console.warn(
+          '[ACH] Required field validation failed'
+        );
+
         this.onError(
-          "Please fill all required fields."
+          'Please fill all required fields.'
         );
 
         return;
       }
 
+      /**
+       * Prepare payment request.
+       *
+       * Business logic unchanged.
+       */
       const requestData:
         PaymentRequestSchemaDTO = {
 
         paymentMethod: {
-          type: "DIRECT_DEBIT_ACH",
+
+          type:
+            'DIRECT_DEBIT_ACH',
 
           accHolder:
             accountHolder,
@@ -213,45 +301,96 @@ export class Ach extends BaseComponent {
           PaymentOutcome.AUTHORIZED,
 
         lang:
-          pathLocale ?? 'en',
+          pathLocale,
 
         path:
           baseSiteUrl,
       };
 
+      /**
+       * Do not log account/routing numbers.
+       */
       console.log(
-        'ACH Request:',
-        requestData
-      );
-
-      const response = await fetch(
-        this.processorUrl + "/directPayment",
+        '[ACH] Payment request prepared',
         {
+          paymentMethod:
+            requestData.paymentMethod.type,
 
-          method: "POST",
+          paymentOutcome:
+            requestData.paymentOutcome,
 
-          headers: {
-            "Content-Type":
-              "application/json",
+          lang:
+            requestData.lang,
 
-            "X-Session-Id":
-              this.sessionId,
-          },
+          path:
+            requestData.path,
 
-          body: JSON.stringify(
-            requestData
-          ),
+          accountHolderAvailable:
+            !!accountHolder,
+
+          accountNumberLength:
+            accountNumber.length,
+
+          routingNumberLength:
+            routingNumber.length,
         }
       );
 
+      /**
+       * Send payment request.
+       */
+      const response =
+        await fetch(
+          this.processorUrl +
+            '/directPayment',
+          {
+            method:
+              'POST',
+
+            headers: {
+
+              'Content-Type':
+                'application/json',
+
+              'X-Session-Id':
+                this.sessionId,
+            },
+
+            body:
+              JSON.stringify(
+                requestData
+              ),
+          }
+        );
+
+      console.log(
+        '[ACH] Payment API response',
+        {
+          status:
+            response.status,
+
+          ok:
+            response.ok,
+        }
+      );
+
+      /**
+       * Handle HTTP errors.
+       */
       if (!response.ok) {
 
         const errorText =
           await response.text();
 
         console.error(
-          'HTTP error response:',
-          errorText
+          '[ACH] HTTP error response',
+          {
+            status:
+              response.status,
+
+            response:
+              errorText,
+          }
         );
 
         throw new Error(
@@ -263,53 +402,106 @@ export class Ach extends BaseComponent {
         await response.json();
 
       console.log(
-        'ACH Response:',
-        data
+        '[ACH] Payment response received',
+        {
+          hasPaymentReference:
+            !!data?.paymentReference,
+
+          transactionStatus:
+            data?.transactionStatus,
+
+          transactionStatusText:
+            data?.transactionStatusText,
+        }
       );
 
+      /**
+       * Payment successful.
+       */
       if (
-        data &&
-        data.paymentReference
+        data?.paymentReference
       ) {
 
         const paymentReference =
-          typeof data.paymentReference === 'string'
+          typeof data.paymentReference ===
+          'string'
             ? data.paymentReference
-            : data.paymentReference.id;
+            : data.paymentReference?.id;
+
+        if (!paymentReference) {
+
+          console.error(
+            '[ACH] Payment reference exists but could not be resolved',
+            {
+              paymentReference:
+                data.paymentReference,
+            }
+          );
+
+          this.onError(
+            'Payment reference missing.'
+          );
+
+          return;
+        }
 
         console.log(
-          'Calling onComplete with:',
-          paymentReference
+          '[ACH] Calling onComplete',
+          {
+            paymentReference,
+          }
         );
 
         this.onComplete?.({
-          isSuccess: true,
+          isSuccess:
+            true,
 
-          paymentReference:
-            paymentReference,
+          paymentReference,
         });
 
-      } else {
-
-        console.error(
-          'Missing paymentReference:',
-          data
-        );
-
-        this.onError(
-          "Payment reference missing."
-        );
+        return;
       }
 
-    } catch (e) {
-
+      /**
+       * Payment failed.
+       */
       console.error(
-        'ACH payment error:',
-        e
+        '[ACH] Payment reference missing',
+        {
+          transactionStatus:
+            data?.transactionStatus,
+
+          transactionStatusText:
+            data?.transactionStatusText,
+        }
       );
 
       this.onError(
-        "Some error occurred. Please try again."
+        data?.transactionStatusText ||
+          'Payment reference missing.'
+      );
+
+    } catch (
+      error: unknown
+    ) {
+
+      console.error(
+        '[ACH] Payment error',
+        {
+          message:
+            error instanceof Error
+              ? error.message
+              : String(error),
+
+          stack:
+            error instanceof Error
+              ? error.stack
+              : undefined,
+        }
+      );
+
+      this.onError(
+        'Some error occurred. Please try again.'
       );
     }
   }
@@ -317,116 +509,206 @@ export class Ach extends BaseComponent {
   private _getTemplate() {
 
     const locale =
-      document.documentElement.lang || "en";
+      document.documentElement.lang ||
+      'en';
+
+    const isGerman =
+      locale
+        .toLowerCase()
+        .startsWith('de');
 
     return `
-    <div class="${styles.wrapper}">
-
       <div
+        class="${styles.wrapper}"
         style="
+          width:100%;
           display:flex;
           flex-direction:column;
-          gap:16px;
+          gap:20px;
+          margin-top:20px;
         "
       >
 
-        <!-- Account Holder -->
-        <div>
+        <div
+          style="
+            display:flex;
+            flex-direction:column;
+            gap:20px;
+            width:100%;
+          "
+        >
 
-          <label for="achForm-accHolder">  
-            ${
-              locale.startsWith("de")
-                ? "Kontoinhaber"
-                : "Account Holder"
-            }
-          </label>
-
-          <input
-            type="text"
-            id="achForm-accHolder"
-            name="accHolder"
-
+          <!-- Account Holder -->
+          <div
             style="
+              display:flex;
+              flex-direction:column;
               width:100%;
-              padding:12px;
-              margin-top:6px;
             "
-          />
-        </div>
+          >
 
-        <!-- Account Number -->
-        <div>
-
-          <label for="achForm-accountNumber">
-            ${
-              locale.startsWith("de")
-                ? "Kontonummer"
-                : "Account Number"
-            }
-          </label>
-
-          <input
-            type="text"
-            id="achForm-accountNumber"
-            name="accountNumber"
-
-            style="
-              width:100%;
-              padding:12px;
-              margin-top:6px;
-            "
-          />
-
-        </div>
-
-        <!-- Routing Number -->
-        <div>
-
-          <label for="achForm-routingNumber">
-            ${
-              locale.startsWith("de")
-                ? "Bankleitzahl"
-                : "Routing Number"
-            }
-          </label>
-
-          <input
-            type="text"
-            id="achForm-routingNumber"
-            name="routingNumber"
-
-            style="
-              width:100%;
-              padding:12px;
-              margin-top:6px;
-            "
-          />
-
-        </div>
-
-        ${
-          this.showPayButton
-            ? `
-            <button
-              class="${buttonStyles.button}
-              ${buttonStyles.fullWidth}
-              ${styles.submitButton}"
-
-              id="achForm-paymentButton"
+            <label
+              for="achForm-accHolder"
+              style="
+                font-size:14px;
+                font-weight:600;
+                color:#333;
+                margin-bottom:6px;
+              "
             >
               ${
-                locale.startsWith("de")
-                  ? "Bezahlen"
-                  : "Pay"
+                isGerman
+                  ? 'Kontoinhaber'
+                  : 'Account Holder'
               }
-            </button>
-            `
-            : ""
-        }
+
+              <span style="color:red;">
+                *
+              </span>
+            </label>
+
+            <input
+              type="text"
+              id="achForm-accHolder"
+              name="accHolder"
+              autocomplete="name"
+              required
+              style="
+                width:100%;
+                padding:12px 14px;
+                margin-top:0;
+                border:1px solid #d4d4d4;
+                border-radius:6px;
+                font-size:15px;
+                box-sizing:border-box;
+              "
+            />
+
+          </div>
+
+          <!-- Account Number -->
+          <div
+            style="
+              display:flex;
+              flex-direction:column;
+              width:100%;
+            "
+          >
+
+            <label
+              for="achForm-accountNumber"
+              style="
+                font-size:14px;
+                font-weight:600;
+                color:#333;
+                margin-bottom:6px;
+              "
+            >
+              ${
+                isGerman
+                  ? 'Kontonummer'
+                  : 'Account Number'
+              }
+
+              <span style="color:red;">
+                *
+              </span>
+            </label>
+
+            <input
+              type="text"
+              id="achForm-accountNumber"
+              name="accountNumber"
+              autocomplete="off"
+              inputmode="numeric"
+              required
+              style="
+                width:100%;
+                padding:12px 14px;
+                margin-top:0;
+                border:1px solid #d4d4d4;
+                border-radius:6px;
+                font-size:15px;
+                box-sizing:border-box;
+              "
+            />
+
+          </div>
+
+          <!-- Routing Number -->
+          <div
+            style="
+              display:flex;
+              flex-direction:column;
+              width:100%;
+            "
+          >
+
+            <label
+              for="achForm-routingNumber"
+              style="
+                font-size:14px;
+                font-weight:600;
+                color:#333;
+                margin-bottom:6px;
+              "
+            >
+              ${
+                isGerman
+                  ? 'Bankleitzahl'
+                  : 'Routing Number'
+              }
+
+              <span style="color:red;">
+                *
+              </span>
+            </label>
+
+            <input
+              type="text"
+              id="achForm-routingNumber"
+              name="routingNumber"
+              autocomplete="off"
+              inputmode="numeric"
+              required
+              style="
+                width:100%;
+                padding:12px 14px;
+                margin-top:0;
+                border:1px solid #d4d4d4;
+                border-radius:6px;
+                font-size:15px;
+                box-sizing:border-box;
+              "
+            />
+
+          </div>
+
+          ${
+            this.showPayButton
+              ? `
+                <button
+                  class="
+                    ${buttonStyles.button}
+                    ${buttonStyles.fullWidth}
+                    ${styles.submitButton}
+                  "
+                  id="achForm-paymentButton"
+                  type="button"
+                >
+                  ${
+                    isGerman
+                      ? 'Bezahlen'
+                      : 'Pay'
+                  }
+                </button>
+              `
+              : ''
+          }
+
+        </div>
 
       </div>
-
-    </div>
     `;
   }
 }
