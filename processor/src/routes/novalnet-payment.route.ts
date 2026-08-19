@@ -266,13 +266,15 @@ export const paymentRoutes = async (
     }
   });
 
-  fastify.post("/getconfig", async (req, reply) => {
+  fastify.post("/getCreditcardConfig", async (req, reply) => {
+    const config = getConfig();
+  
     const clientKey = String(
-      getConfig()?.novalnetClientkey ?? "",
+      config?.novalnetClientkey ?? "",
     );
   
     const inline = String(
-      getConfig()?.novalnetCreditcardDisplayInlineCreditcardForm ?? "0",
+      config?.novalnet_CREDITCARD_DisplayInline ?? "0",
     );
   
     return reply.code(200).send({
