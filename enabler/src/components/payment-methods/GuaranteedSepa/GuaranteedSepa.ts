@@ -21,6 +21,12 @@ declare global {
     NovalnetUtility?: {
       checkIban: (event: Event, bicDivId: string) => boolean;
       formatIban: (event: Event, bicDivId: string) => boolean | void;
+      setBirthDateFormat: (format: string) => void;
+      isNumericBirthdate: (
+        input: HTMLInputElement,
+        event: KeyboardEvent
+      ) => boolean | void;
+      validateDateFormat: (value: string) => boolean;
     };
   }
 }
@@ -48,7 +54,7 @@ export class GuaranteedSepa extends BaseComponent {
     const container = document.querySelector(safeSelector);
 
     if (!container) {
-      console.error("[Guaranteed SEPA] Container not found", safeSelector);
+      console.error("[Guaranteed SEPA] Container not found:", safeSelector);
       return;
     }
 
@@ -66,6 +72,7 @@ export class GuaranteedSepa extends BaseComponent {
       }
 
       this.initializeIbanHandling();
+      this.initializeDobHandling();
     }, 100);
 
     if (this.showPayButton) {
@@ -122,10 +129,7 @@ export class GuaranteedSepa extends BaseComponent {
           "nn_guaranteesepa_bic_div"
         );
       } catch (err) {
-        console.error(
-          "[Guaranteed SEPA] IBAN formatting error",
-          err
-        );
+        console.error("[Guaranteed SEPA] IBAN formatting error", err);
       }
 
       const bicContainer = document.getElementById(
@@ -136,9 +140,7 @@ export class GuaranteedSepa extends BaseComponent {
 
       const hasValue = ibanInput.value.trim().length > 0;
 
-      console.log("[Guaranteed SEPA] Toggle BIC", {
-        hasValue,
-      });
+      console.log("[Guaranteed SEPA] Toggle BIC", { hasValue });
 
       bicContainer.style.display = hasValue ? "flex" : "none";
     };
@@ -155,13 +157,46 @@ export class GuaranteedSepa extends BaseComponent {
       );
   }
 
+  private initializeDobHandling() {
+    const dobInput = document.getElementById(
+      "nn_guaranteesepa_dob"
+    ) as HTMLInputElement | null;
+
+    if (!dobInput || !window.NovalnetUtility) {
+      console.warn("[Guaranteed SEPA] DOB initialization skipped");
+      return;
+    }
+
+    console.log("[Guaranteed SEPA] Initializing DOB formatting");
+
+    window.NovalnetUtility.setBirthDateFormat("DD.MM.YYYY");
+
+    dobInput.addEventListener("keydown", (event) => {
+      console.log("[Guaranteed SEPA] DOB keydown:", dobInput.value);
+
+      window.NovalnetUtility?.isNumericBirthdate(
+        dobInput,
+        event as KeyboardEvent
+      );
+    });
+
+    dobInput.addEventListener("blur", () => {
+      const valid =
+        window.NovalnetUtility?.validateDateFormat(dobInput.value);
+
+      console.log("[Guaranteed SEPA] DOB validation:", {
+        value: dobInput.value,
+        valid,
+      });
+    });
+  }
+
   async submit() {
     this.sdk.init({
       environment: this.environment,
     });
 
-    const locale =
-      window.location.pathname.split("/")[1] ?? "de";
+    const locale = window.location.pathname.split("/")[1] ?? "de";
     const baseUrl = window.location.origin;
 
     try {
@@ -181,10 +216,17 @@ export class GuaranteedSepa extends BaseComponent {
         document.getElementById("nn_sepa_bic") as HTMLInputElement
       )?.value.trim();
 
+      const birthDate = (
+        document.getElementById(
+          "nn_guaranteesepa_dob"
+        ) as HTMLInputElement
+      )?.value.trim();
+
       console.log("[Guaranteed SEPA] Submit values", {
         accountHolder,
         iban,
         bic,
+        birthDate,
       });
 
       if (!accountHolder) {
@@ -197,22 +239,38 @@ export class GuaranteedSepa extends BaseComponent {
         return;
       }
 
+      if (!birthDate) {
+        this.onError("Please enter Date of Birth.");
+        return;
+      }
+
+      const validDob =
+        window.NovalnetUtility?.validateDateFormat(birthDate);
+
+      console.log("[Guaranteed SEPA] DOB final validation", {
+        birthDate,
+        validDob,
+      });
+
+      if (!validDob) {
+        this.onError("Please enter a valid Date of Birth.");
+        return;
+      }
+
       const requestData: PaymentRequestSchemaDTO = {
         paymentMethod: {
           type: "GUARANTEED_DIRECT_DEBIT_SEPA",
           accHolder: accountHolder,
           iban,
           bic,
+          birthDate,
         },
         paymentOutcome: PaymentOutcome.AUTHORIZED,
         lang: locale,
         path: baseUrl,
       };
 
-      console.log(
-        "[Guaranteed SEPA] Request",
-        requestData
-      );
+      console.log("[Guaranteed SEPA] Request", requestData);
 
       const response = await fetch(
         this.processorUrl + "/directPayment",
@@ -228,19 +286,13 @@ export class GuaranteedSepa extends BaseComponent {
 
       if (!response.ok) {
         const text = await response.text();
-        console.error(
-          "[Guaranteed SEPA] HTTP Error",
-          text
-        );
+        console.error("[Guaranteed SEPA] HTTP Error", text);
         throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
 
-      console.log(
-        "[Guaranteed SEPA] Response",
-        data
-      );
+      console.log("[Guaranteed SEPA] Response", data);
 
       if (data?.paymentReference) {
         this.onComplete?.({
@@ -255,11 +307,7 @@ export class GuaranteedSepa extends BaseComponent {
           "Payment failed. Please try again."
       );
     } catch (err) {
-      console.error(
-        "[Guaranteed SEPA] Submit error",
-        err
-      );
-
+      console.error("[Guaranteed SEPA] Submit error", err);
       this.onError("Some error occurred. Please try again.");
     }
   }
@@ -308,14 +356,8 @@ export class GuaranteedSepa extends BaseComponent {
             />
           </div>
 
-          <div
-            id="nn_guaranteesepa_bic_div"
-            style="display:none;flex-direction:column;width:100%;"
-          >
-            <label
-              for="nn_sepa_bic"
-              style="font-size:14px;font-weight:600;margin-bottom:6px;"
-            >
+          <div id="nn_guaranteesepa_bic_div" style="display:none;flex-direction:column;width:100%;">
+            <label for="nn_sepa_bic" style="font-size:14px;font-weight:600;margin-bottom:6px;">
               BIC
             </label>
 
@@ -323,6 +365,20 @@ export class GuaranteedSepa extends BaseComponent {
               type="text"
               id="nn_sepa_bic"
               name="nn_sepa_bic"
+              style="padding:12px 14px;border:1px solid #d4d4d4;border-radius:6px;font-size:15px;"
+            />
+          </div>
+
+          <div style="display:flex;flex-direction:column;">
+            <label for="nn_guaranteesepa_dob" style="font-size:14px;font-weight:600;margin-bottom:6px;">
+              Date of Birth <span style="color:red;">*</span>
+            </label>
+
+            <input
+              type="text"
+              id="nn_guaranteesepa_dob"
+              placeholder="DD.MM.YYYY"
+              maxlength="10"
               style="padding:12px 14px;border:1px solid #d4d4d4;border-radius:6px;font-size:15px;"
             />
           </div>
