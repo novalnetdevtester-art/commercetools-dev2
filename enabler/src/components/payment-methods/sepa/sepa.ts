@@ -1158,6 +1158,9 @@ export class Sepa extends BaseComponent {
               "
             >
               BIC
+              <span style="color:red;">
+                *
+              </span>
             </label>
 
             <input
