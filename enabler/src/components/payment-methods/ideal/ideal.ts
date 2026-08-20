@@ -43,10 +43,7 @@ export class Ideal extends BaseComponent {
   }
 
   mount(selector: string) {
-
-    /**
-     * Fix commercetools selector issue
-     */
+    
     const safeSelector =
       "#" + CSS.escape(selector.substring(1));
 
