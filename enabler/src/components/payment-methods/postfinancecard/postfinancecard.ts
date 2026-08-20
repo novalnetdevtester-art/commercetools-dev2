@@ -3,11 +3,11 @@ import {
   PaymentComponent,
   PaymentComponentBuilder,
   PaymentMethod
-} from '../../../payment-enabler/payment-enabler';
+} from "../../../payment-enabler/payment-enabler";
 
 import { BaseComponent } from "../../base";
 
-import styles from '../../../style/style.module.scss';
+import styles from "../../../style/style.module.scss";
 import buttonStyles from "../../../style/button.module.scss";
 
 import {
@@ -30,19 +30,17 @@ export class PostfinancecardBuilder
     config: ComponentOptions
   ): PaymentComponent {
 
-    return new Postfinance(
+    return new Postfinancecard(
       this.baseOptions,
       config
     );
   }
 }
 
-export class Postfinance
+export class Postfinancecard
   extends BaseComponent {
 
   private showPayButton: boolean;
-
-  private isSubmitting = false;
 
   constructor(
     baseOptions: BaseOptions,
@@ -50,7 +48,7 @@ export class Postfinance
   ) {
 
     super(
-      PaymentMethod.postfinance,
+      PaymentMethod.postfinancecard,
       baseOptions,
       componentOptions
     );
@@ -61,11 +59,8 @@ export class Postfinance
 
   mount(selector: string) {
 
-    /**
-     * Fix commercetools selector issue
-     */
     const safeSelector =
-      '#' + CSS.escape(
+      "#" + CSS.escape(
         selector.substring(1)
       );
 
@@ -76,54 +71,42 @@ export class Postfinance
 
     if (!container) {
 
-      console.error(
-        'Container not found:',
+      console.warn(
+        "[PostFinance Card] Container not found:",
         safeSelector
       );
 
       return;
     }
 
-    /**
-     * Same behavior as iDEAL
-     * Prevent radio button removal
-     */
     container.insertAdjacentHTML(
       "afterbegin",
       this._getTemplate()
     );
 
-    /**
-     * Update only current payment label
-     */
     setTimeout(() => {
 
       const paymentLabel =
-        container.querySelector(
-          'label'
-        );
+        container.querySelector("label");
 
       if (
         paymentLabel &&
         paymentLabel.textContent
           ?.toLowerCase()
-          .includes('postfinancecard')
+          .includes("postfinancecard")
       ) {
 
         paymentLabel.textContent =
-          'PostFinance Card';
+          "PostFinance Card";
       }
 
     }, 100);
 
-    /**
-     * Bind button event
-     */
     if (this.showPayButton) {
 
       const button =
-        document.querySelector(
-          "#purchaseOrderForm-paymentButton"
+        container.querySelector(
+          "#postfinance-paymentButton"
         );
 
       if (button) {
@@ -140,10 +123,11 @@ export class Postfinance
       }
     }
   }
+
   async submit() {
 
     this.sdk.init({
-      environment: this.environment
+      environment: this.environment,
     });
 
     const pathLocale =
@@ -168,7 +152,7 @@ export class Postfinance
           PaymentOutcome.AUTHORIZED,
 
         lang:
-          pathLocale ?? 'de',
+          pathLocale ?? "de",
 
         path:
           baseSiteUrl,
@@ -200,8 +184,11 @@ export class Postfinance
           await response.text();
 
         console.error(
-          'HTTP error response:',
-          errorText
+          "[PostFinance Card] HTTP error:",
+          {
+            status: response.status,
+            body: errorText,
+          }
         );
 
         throw new Error(
@@ -219,21 +206,27 @@ export class Postfinance
 
       } else {
 
-        console.error(
-          'Missing redirect URL:',
-          data
-        );
-
         this.onError(
-          "Redirect URL missing."
+          data?.transactionStatusText ||
+          "Payment failed. Please try again."
         );
       }
 
     } catch (e) {
 
       console.error(
-        'PostFinance payment error:',
-        e
+        "[PostFinance Card] Submit error:",
+        {
+          message:
+            e instanceof Error
+              ? e.message
+              : String(e),
+
+          stack:
+            e instanceof Error
+              ? e.stack
+              : undefined,
+        }
       );
 
       this.onError(
