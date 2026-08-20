@@ -596,13 +596,21 @@ export class GuaranteedSepa extends BaseComponent {
               style="font-size:14px;font-weight:600;margin-bottom:6px;"
             >
               BIC
+              <span style="color:red;">*</span>
             </label>
-
+          
             <input
               type="text"
               id="nn_sepa_bic"
               name="nn_sepa_bic"
-              style="padding:12px 14px;border:1px solid #d4d4d4;border-radius:6px;font-size:15px;"
+              style="
+                width:100%;
+                box-sizing:border-box;
+                padding:12px 14px;
+                border:1px solid #d4d4d4;
+                border-radius:6px;
+                font-size:15px;
+              "
             />
           </div>
 
