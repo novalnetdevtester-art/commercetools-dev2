@@ -507,6 +507,34 @@ public async failureResponse({ data }: { data: any }) {
   public async createDirectPayment(
     request: CreatePaymentRequest,
   ): Promise<PaymentResponseSchemaDTO> {
+    
+    const requestData =
+      typeof request.data === "string"
+        ? JSON.parse(request.data)
+        : request.data;
+
+    log.info("[createDirectPayment] START", {
+      paymentMethod: requestData?.paymentMethod?.type,
+      paymentOutcome: requestData?.paymentOutcome,
+      lang: requestData?.lang,
+      path: requestData?.path,
+    });
+
+    if (
+      requestData?.paymentMethod?.type === "GUARANTEED_DIRECT_DEBIT_SEPA" ||
+      requestData?.paymentMethod?.type === "GUARANTEED_INVOICE"
+    ) {
+      log.info("[Guarantee] Frontend payload", {
+        paymentMethod: requestData.paymentMethod.type,
+        birthDate: requestData.paymentMethod.birthDate,
+        birthdate: requestData.paymentMethod.birthdate,
+        ibanPresent: !!requestData.paymentMethod.iban,
+        ibanLength: requestData.paymentMethod.iban?.length,
+        bicPresent: !!requestData.paymentMethod.bic,
+        accHolderPresent: !!requestData.paymentMethod.accHolder,
+      });
+    }
+
     const type = String(request.data?.paymentMethod?.type);
     const config = getConfig();
     const {
@@ -522,6 +550,14 @@ public async failureResponse({ data }: { data: any }) {
     await createTransactionCommentsType();
     const ctCart = await this.ctCartService.getCart({
       id: getCartIdFromContext(),
+    });
+
+    log.info("[createDirectPayment] Cart loaded", {
+      cartId: ctCart.id,
+      customerId: ctCart.customerId,
+      anonymousId: ctCart.anonymousId,
+      totalAmount: ctCart.taxedPrice?.totalGross?.centAmount,
+      currency: ctCart.taxedPrice?.totalGross?.currencyCode,
     });
 
     const deliveryAddress = await this.ctcc(ctCart);
@@ -610,6 +646,19 @@ public async failureResponse({ data }: { data: any }) {
           transaction.payment_type = "INVOICE";
         }
       }
+
+      log.info("[Guarantee] Eligibility check", {
+        paymentMethod: requestData.paymentMethod.type,
+        sameAddress,
+        isEuropean,
+        isEur,
+        orderTotal,
+        minimumAmount: minAmount,
+        amountValid,
+        countryAllowed,
+        guaranteePayment,
+        forceNonGuarantee,
+      });
     }
 
     const company = billingAddress?.additionalAddressInfo ?? "";
@@ -617,11 +666,22 @@ public async failureResponse({ data }: { data: any }) {
     let birthDate: string | undefined;
 
     if (!company) {
-      const rawBirthDate = request.data.paymentMethod?.birthdate;
+      const rawBirthDate =
+        requestData.paymentMethod?.birthDate ??
+        requestData.paymentMethod?.birthdate;
+
+      log.info("[Guarantee] DOB received", {
+        rawBirthDate,
+      });
       if (typeof rawBirthDate === "string" && rawBirthDate.trim() !== "") {
         birthDate = this.formatBirthDateToYMD(rawBirthDate);
       }
+      
     }
+
+    log.info("[Guarantee] DOB formatted", {
+      birthDate,
+    });
 
     if (
       String(request.data.paymentMethod.type).toUpperCase() ===
@@ -652,6 +712,10 @@ public async failureResponse({ data }: { data: any }) {
       };
     }
     
+    log.info("[CT] Creating payment", {
+      paymentMethod: requestData.paymentMethod.type,
+      amount: ctCart.taxedPrice?.totalGross?.centAmount,
+    });
 
     const ctPayment = await this.ctPaymentService.createPayment({
       amountPlanned: await this.ctCartService.getPaymentAmount({
@@ -776,6 +840,21 @@ public async failureResponse({ data }: { data: any }) {
       },
     };
 
+    const debugPayload = JSON.parse(JSON.stringify(novalnetPayload));
+
+    if (debugPayload?.transaction?.payment_data?.iban) {
+      const iban = debugPayload.transaction.payment_data.iban;
+      debugPayload.transaction.payment_data.iban =
+        iban.slice(0, 4) +
+        "********" +
+        iban.slice(-4);
+    }
+
+    log.info("[Novalnet] Outgoing payload", {
+      paymentMethod: transaction.payment_type,
+      payload: debugPayload,
+    });
+
     let paymentActionUrl = "payment";
     if (paymentAction === "authorize") {
       const orderTotal = String(parsedCart?.taxedPrice?.totalGross?.centAmount);
@@ -787,7 +866,24 @@ public async failureResponse({ data }: { data: any }) {
         : "https://payport.novalnet.de/v2/authorize";
     let responseData: any;
     try {
+
+      log.info("[Novalnet] Calling API", {
+        url,
+        paymentMethod: transaction.payment_type,
+      });
+
       responseData = await this.callNovalnet(url, novalnetPayload);
+      log.info("[Novalnet] Raw response", {
+      paymentMethod: transaction.payment_type,
+      resultStatus: responseData?.result?.status,
+      resultStatusCode: responseData?.result?.status_code,
+      resultStatusText: responseData?.result?.status_text,
+      transactionStatus: responseData?.transaction?.status,
+      transactionStatusCode: responseData?.transaction?.status_code,
+      transactionStatusText: responseData?.transaction?.status_text,
+      tid: responseData?.transaction?.tid,
+    });
+
     } catch (err) {
       log.error("Failed to process payment with Novalnet:", err);
       throw new Error("Payment processing failed");
@@ -818,6 +914,12 @@ public async failureResponse({ data }: { data: any }) {
     const statusCode = parsedResponse?.transaction?.status_code;
     const status = String(parsedResponse?.transaction?.status ?? "").toUpperCase();
     const { state, transactionType } = this.getTransactionStatus(status);
+    log.info("[CT] Transaction mapping", {
+      paymentMethod: transaction.payment_type,
+      novalnetStatus: status,
+      mappedState: state,
+      mappedType: transactionType,
+    });
     const transactions = parsedResponse?.transaction;
     const amount = transactions?.amount;
     const tid = transactions?.tid;
@@ -867,6 +969,13 @@ public async failureResponse({ data }: { data: any }) {
     if (localizedBankDetailsComment[lang]) {
       transactionComments += `\n\n${localizedBankDetailsComment[lang]}`;
     }
+
+    log.info("[CT] Updating payment", {
+      paymentId: ctPayment.id,
+      pspReference,
+      transactionType,
+      state,
+    });
 
     await this.ctPaymentService.updatePayment({
       id: ctPayment.id,
@@ -935,6 +1044,14 @@ public async failureResponse({ data }: { data: any }) {
       updatedTransaction?.custom?.fields?.transactionComments ??
       transactionCommentsText;
     // Store for later Order sync (because Order does NOT exist yet)
+
+    log.info("[CustomObject] Saving payment snapshot", {
+      paymentId: ctPayment.id,
+      tid,
+      paymentType,
+      status,
+    });
+    
     await customObjectService.upsert(
       "nn-private-data",
       `${ctPayment.id}-${pspReference}`,
@@ -951,7 +1068,13 @@ public async failureResponse({ data }: { data: any }) {
       },
     );
 
-    // Never try to read Order here — it does not exist yet
+    log.info("[createDirectPayment] END", {
+      paymentReference: ctPayment.id,
+      transactionStatus: parsedResponse?.transaction?.status,
+      transactionStatusText: parsedResponse?.transaction?.status_text,
+      tid,
+    });
+    
     return {
       paymentReference: ctPayment.id,
       novalnetResponse: parsedResponse,
