@@ -3,11 +3,11 @@ import {
   PaymentComponent,
   PaymentComponentBuilder,
   PaymentMethod
-} from '../../../payment-enabler/payment-enabler';
+} from "../../../payment-enabler/payment-enabler";
 
 import { BaseComponent } from "../../base";
 
-import styles from '../../../style/style.module.scss';
+import styles from "../../../style/style.module.scss";
 import buttonStyles from "../../../style/button.module.scss";
 
 import {
@@ -42,8 +42,6 @@ export class Onlinebanktransfer
 
   private showPayButton: boolean;
 
-  private isSubmitting = false;
-
   constructor(
     baseOptions: BaseOptions,
     componentOptions: ComponentOptions
@@ -61,11 +59,8 @@ export class Onlinebanktransfer
 
   mount(selector: string) {
 
-    /**
-     * Fix commercetools selector issue
-     */
     const safeSelector =
-      '#' + CSS.escape(
+      "#" + CSS.escape(
         selector.substring(1)
       );
 
@@ -76,53 +71,41 @@ export class Onlinebanktransfer
 
     if (!container) {
 
-      console.error(
-        'Container not found:',
+      console.warn(
+        "[Online Bank Transfer] Container not found:",
         safeSelector
       );
 
       return;
     }
 
-    /**
-     * Same behavior as iDEAL
-     * Prevent radio button removal
-     */
     container.insertAdjacentHTML(
       "afterbegin",
       this._getTemplate()
     );
 
-    /**
-     * Update only current payment label
-     */
     setTimeout(() => {
 
       const paymentLabel =
-        container.querySelector(
-          'label'
-        );
+        container.querySelector("label");
 
       if (
         paymentLabel &&
         paymentLabel.textContent
           ?.toLowerCase()
-          .includes('onlinebanktransfer')
+          .includes("onlinebanktransfer")
       ) {
 
         paymentLabel.textContent =
-          'Online bank transfer';
+          "Online bank transfer";
       }
 
     }, 100);
 
-    /**
-     * Bind button event
-     */
     if (this.showPayButton) {
 
       const button =
-        document.querySelector(
+        container.querySelector(
           "#onlinebanktransfer-paymentButton"
         );
 
@@ -144,7 +127,7 @@ export class Onlinebanktransfer
   async submit() {
 
     this.sdk.init({
-      environment: this.environment
+      environment: this.environment,
     });
 
     const pathLocale =
@@ -169,7 +152,7 @@ export class Onlinebanktransfer
           PaymentOutcome.AUTHORIZED,
 
         lang:
-          pathLocale ?? 'de',
+          pathLocale ?? "de",
 
         path:
           baseSiteUrl,
@@ -201,8 +184,11 @@ export class Onlinebanktransfer
           await response.text();
 
         console.error(
-          'HTTP error response:',
-          errorText
+          "[Online Bank Transfer] HTTP error:",
+          {
+            status: response.status,
+            body: errorText,
+          }
         );
 
         throw new Error(
@@ -213,30 +199,34 @@ export class Onlinebanktransfer
       const data =
         await response.json();
 
-      if (
-        data?.txnSecret
-      ) {
+      if (data?.txnSecret) {
 
         window.location.href =
           data.txnSecret;
 
       } else {
 
-        console.error(
-          'Missing txnSecret:',
-          data
-        );
-
         this.onError(
-          "Payment redirect failed."
+          data?.transactionStatusText ||
+          "Payment failed. Please try again."
         );
       }
 
     } catch (e) {
 
       console.error(
-        'Online bank transfer error:',
-        e
+        "[Online Bank Transfer] Submit error:",
+        {
+          message:
+            e instanceof Error
+              ? e.message
+              : String(e),
+
+          stack:
+            e instanceof Error
+              ? e.stack
+              : undefined,
+        }
       );
 
       this.onError(
