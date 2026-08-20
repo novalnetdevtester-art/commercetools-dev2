@@ -2,11 +2,12 @@ import {
   ComponentOptions,
   PaymentComponent,
   PaymentComponentBuilder,
-  PaymentMethod
-} from '../../../payment-enabler/payment-enabler';
+  PaymentMethod,
+} from "../../../payment-enabler/payment-enabler";
 
 import { BaseComponent } from "../../base";
-import styles from '../../../style/style.module.scss';
+
+import styles from "../../../style/style.module.scss";
 import buttonStyles from "../../../style/button.module.scss";
 
 import {
@@ -16,8 +17,6 @@ import {
 
 import { BaseOptions } from "../../../payment-enabler/novalnet-payment-enabler";
 
-import { checkoutFlow } from '@commercetools/checkout-browser-sdk';
-
 export class IdealBuilder implements PaymentComponentBuilder {
 
   public componentHasSubmit = true;
@@ -25,7 +24,6 @@ export class IdealBuilder implements PaymentComponentBuilder {
   constructor(private baseOptions: BaseOptions) {}
 
   build(config: ComponentOptions): PaymentComponent {
-
     return new Ideal(this.baseOptions, config);
   }
 }
@@ -38,8 +36,6 @@ export class Ideal extends BaseComponent {
     baseOptions: BaseOptions,
     componentOptions: ComponentOptions
   ) {
-
-    // Keep internal type safe
     super(PaymentMethod.ideal, baseOptions, componentOptions);
 
     this.showPayButton =
@@ -48,18 +44,17 @@ export class Ideal extends BaseComponent {
 
   mount(selector: string) {
 
-    // Fix invalid selector issue
-    const safeSelector = selector.replace(/\|/g, '\\|');
+    /**
+     * Fix commercetools selector issue
+     */
+    const safeSelector =
+      "#" + CSS.escape(selector.substring(1));
 
-    const container = document.querySelector(safeSelector);
+    const container =
+      document.querySelector(safeSelector);
 
     if (!container) {
-
-      console.error(
-        'Container not found:',
-        safeSelector
-      );
-
+      console.warn("[iDEAL] Container not found:", safeSelector);
       return;
     }
 
@@ -68,21 +63,31 @@ export class Ideal extends BaseComponent {
       this._getTemplate()
     );
 
-    // Update storefront payment label
+    /**
+     * Update only current payment label
+     */
     setTimeout(() => {
-      const labels = document.querySelectorAll('label');
+      const labels = container.querySelectorAll("label");
+
       labels.forEach((label) => {
         const text = label.textContent?.trim().toLowerCase();
-        if (text?.includes('ideal')) {
-          label.textContent = 'iDEAL | Wero';
+
+        if (text?.includes("ideal")) {
+          label.textContent = "iDEAL | Wero";
         }
       });
-    }, 300);
+    }, 100);
 
     if (this.showPayButton) {
-      const button = document.querySelector("#purchaseOrderForm-paymentButton");
+
+      const button =
+        container.querySelector("#purchaseOrderForm-paymentButton");
+
       if (button) {
-        button.addEventListener("click", (e) => {
+
+        button.addEventListener(
+          "click",
+          (e) => {
             e.preventDefault();
             this.submit();
           }
@@ -94,29 +99,28 @@ export class Ideal extends BaseComponent {
   async submit() {
 
     this.sdk.init({
-      environment: this.environment
+      environment: this.environment,
     });
 
     const pathLocale =
       window.location.pathname.split("/")[1];
 
-    const url = new URL(window.location.href);
+    const url =
+      new URL(window.location.href);
 
-    const baseSiteUrl = url.origin;
+    const baseSiteUrl =
+      url.origin;
 
     try {
 
-      const requestData:
-        PaymentRequestSchemaDTO = {
-
+      const requestData: PaymentRequestSchemaDTO = {
         paymentMethod: {
-          type: 'iDEAL | Wero',
+          type: "IDEAL",
         },
 
-        paymentOutcome:
-          PaymentOutcome.AUTHORIZED,
+        paymentOutcome: PaymentOutcome.AUTHORIZED,
 
-        lang: pathLocale ?? 'de',
+        lang: pathLocale ?? "de",
 
         path: baseSiteUrl,
       };
@@ -124,82 +128,78 @@ export class Ideal extends BaseComponent {
       const response = await fetch(
         this.processorUrl + "/redirectPayment",
         {
-
           method: "POST",
 
           headers: {
-            "Content-Type":
-              "application/json",
-
-            "X-Session-Id":
-              this.sessionId,
+            "Content-Type": "application/json",
+            "X-Session-Id": this.sessionId,
           },
 
-          body: JSON.stringify(
-            requestData
-          ),
+          body: JSON.stringify(requestData),
         }
       );
 
       if (!response.ok) {
 
-        const errorText =
-          await response.text();
+        const errorText = await response.text();
 
-        console.error(
-          'HTTP error response:',
-          errorText
-        );
+        console.error("[iDEAL] HTTP error:", {
+          status: response.status,
+          body: errorText,
+        });
 
-        throw new Error(
-          `HTTP error! status: ${response.status}`
-        );
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
 
-      window.location.href =
-        data.txnSecret;
+      if (data?.txnSecret) {
+
+        window.location.href = data.txnSecret;
+
+      } else {
+
+        this.onError(
+          data?.transactionStatusText ||
+          "Payment failed. Please try again."
+        );
+      }
 
     } catch (e) {
 
-      console.error(
-        'Error details:',
-        {
-          message: e.message,
-          stack: e.stack,
-          name: e.name
-        }
-      );
+      console.error("[iDEAL] Submit error:", {
+        message: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      });
 
-      this.onError(
-        "Some error occurred. Please try again."
-      );
+      this.onError("Some error occurred. Please try again.");
     }
   }
 
   private _getTemplate() {
 
+    const locale =
+      document.documentElement.lang || "en";
+
+    const description =
+      locale.startsWith("de")
+        ? "Bezahlen Sie bequem mit iDEAL | Wero und schließen Sie die Zahlung über Ihre Bank ab."
+        : "Pay easily with iDEAL | Wero and complete your payment through your bank.";
+
     return this.showPayButton
       ? `
-    <div class="${styles.wrapper}">
+      <div class="${styles.wrapper}">
+        <p>${description}</p>
 
-      <p>
-        Pay easily with iDEAL | Wero and transfer the shopping amount within the specified date.
-      </p>
-
-      <button
-        class="${buttonStyles.button}
-        ${buttonStyles.fullWidth}
-        ${styles.submitButton}"
-
-        id="purchaseOrderForm-paymentButton"
-      >
-        Pay Now
-      </button>
-
-    </div>
-    `
+        <button
+          class="${buttonStyles.button} ${buttonStyles.fullWidth} ${styles.submitButton}"
+          id="purchaseOrderForm-paymentButton"
+          type="button"
+        >
+          ${locale.startsWith("de") ? "Bezahlen" : "Pay Now"}
+        </button>
+      </div>
+      `
       : "";
   }
 }
