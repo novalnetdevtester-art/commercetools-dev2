@@ -3,11 +3,11 @@ import {
   PaymentComponent,
   PaymentComponentBuilder,
   PaymentMethod
-} from '../../../payment-enabler/payment-enabler';
+} from "../../../payment-enabler/payment-enabler";
 
 import { BaseComponent } from "../../base";
 
-import styles from '../../../style/style.module.scss';
+import styles from "../../../style/style.module.scss";
 import buttonStyles from "../../../style/button.module.scss";
 
 import {
@@ -17,8 +17,7 @@ import {
 
 import { BaseOptions } from "../../../payment-enabler/novalnet-payment-enabler";
 
-export class MbwayBuilder
-  implements PaymentComponentBuilder {
+export class MbwayBuilder implements PaymentComponentBuilder {
 
   public componentHasSubmit = true;
 
@@ -26,29 +25,19 @@ export class MbwayBuilder
     private baseOptions: BaseOptions
   ) {}
 
-  build(
-    config: ComponentOptions
-  ): PaymentComponent {
-
-    return new Mbway(
-      this.baseOptions,
-      config
-    );
+  build(config: ComponentOptions): PaymentComponent {
+    return new Mbway(this.baseOptions, config);
   }
 }
 
-export class Mbway
-  extends BaseComponent {
+export class Mbway extends BaseComponent {
 
   private showPayButton: boolean;
-
-  private isSubmitting = false;
 
   constructor(
     baseOptions: BaseOptions,
     componentOptions: ComponentOptions
   ) {
-
     super(
       PaymentMethod.mbway,
       baseOptions,
@@ -61,79 +50,50 @@ export class Mbway
 
   mount(selector: string) {
 
-    /**
-     * Fix commercetools selector issue
-     */
     const safeSelector =
-      '#' + CSS.escape(
-        selector.substring(1)
-      );
+      "#" + CSS.escape(selector.substring(1));
 
     const container =
-      document.querySelector(
-        safeSelector
-      );
+      document.querySelector(safeSelector);
 
     if (!container) {
-
-      console.error(
-        'Container not found:',
-        safeSelector
-      );
-
+      console.warn("[MB Way] Container not found:", safeSelector);
       return;
     }
 
-    /**
-     * Same behavior as iDEAL
-     * Prevent radio button removal
-     */
     container.insertAdjacentHTML(
       "afterbegin",
       this._getTemplate()
     );
 
-    /**
-     * Update only current payment label
-     */
     setTimeout(() => {
 
       const paymentLabel =
-        container.querySelector(
-          'label'
-        );
+        container.querySelector("label");
 
       if (
         paymentLabel &&
         paymentLabel.textContent
           ?.toLowerCase()
-          .includes('mbway')
+          .includes("mbway")
       ) {
 
-        paymentLabel.textContent =
-          'MB Way';
+        paymentLabel.textContent = "MB Way";
       }
 
     }, 100);
 
-    /**
-     * Bind button event
-     */
     if (this.showPayButton) {
 
       const button =
-        document.querySelector(
-          "#mbway-paymentButton"
-        );
+        container.querySelector("#mbway-paymentButton");
 
       if (button) {
 
         button.addEventListener(
           "click",
           (e) => {
-
             e.preventDefault();
-
             this.submit();
           }
         );
@@ -144,7 +104,7 @@ export class Mbway
   async submit() {
 
     this.sdk.init({
-      environment: this.environment
+      environment: this.environment,
     });
 
     const pathLocale =
@@ -158,40 +118,29 @@ export class Mbway
 
     try {
 
-      const requestData:
-        PaymentRequestSchemaDTO = {
-
+      const requestData: PaymentRequestSchemaDTO = {
         paymentMethod: {
           type: "MBWAY",
         },
 
-        paymentOutcome:
-          PaymentOutcome.AUTHORIZED,
+        paymentOutcome: PaymentOutcome.AUTHORIZED,
 
-        lang:
-          pathLocale ?? 'de',
+        lang: pathLocale ?? "de",
 
-        path:
-          baseSiteUrl,
+        path: baseSiteUrl,
       };
 
       const response = await fetch(
         this.processorUrl + "/redirectPayment",
         {
-
           method: "POST",
 
           headers: {
-            "Content-Type":
-              "application/json",
-
-            "X-Session-Id":
-              this.sessionId,
+            "Content-Type": "application/json",
+            "X-Session-Id": this.sessionId,
           },
 
-          body: JSON.stringify(
-            requestData
-          ),
+          body: JSON.stringify(requestData),
         }
       );
 
@@ -200,14 +149,12 @@ export class Mbway
         const errorText =
           await response.text();
 
-        console.error(
-          'HTTP error response:',
-          errorText
-        );
+        console.error("[MB Way] HTTP error:", {
+          status: response.status,
+          body: errorText,
+        });
 
-        throw new Error(
-          `HTTP error! status: ${response.status}`
-        );
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data =
@@ -215,31 +162,24 @@ export class Mbway
 
       if (data?.txnSecret) {
 
-        window.location.href =
-          data.txnSecret;
+        window.location.href = data.txnSecret;
 
       } else {
 
-        console.error(
-          'Missing redirect URL:',
-          data
-        );
-
         this.onError(
-          "Redirect URL missing."
+          data?.transactionStatusText ||
+          "Payment failed. Please try again."
         );
       }
 
     } catch (e) {
 
-      console.error(
-        'MB Way payment error:',
-        e
-      );
+      console.error("[MB Way] Submit error:", {
+        message: e instanceof Error ? e.message : String(e),
+        stack: e instanceof Error ? e.stack : undefined,
+      });
 
-      this.onError(
-        "Some error occurred. Please try again."
-      );
+      this.onError("Some error occurred. Please try again.");
     }
   }
 
@@ -258,32 +198,21 @@ export class Mbway
         id="novalnet-mbway-wrapper"
         class="${styles.wrapper}"
       >
-
-        <p>
-          ${description}
-        </p>
+        <p>${description}</p>
 
         ${
           this.showPayButton
             ? `
             <button
-              class="${buttonStyles.button}
-              ${buttonStyles.fullWidth}
-              ${styles.submitButton}"
-
+              class="${buttonStyles.button} ${buttonStyles.fullWidth} ${styles.submitButton}"
               id="mbway-paymentButton"
               type="button"
             >
-              ${
-                locale.startsWith("de")
-                  ? "Bezahlen"
-                  : "Pay Now"
-              }
+              ${locale.startsWith("de") ? "Bezahlen" : "Pay Now"}
             </button>
             `
             : ""
         }
-
       </div>
     `;
   }
