@@ -682,8 +682,8 @@ public async failureResponse({ data }: { data: any }) {
     });
 
     if (
-      paymentMethodType === "DIRECT_DEBIT_SEPA" ||
-      paymentMethodType === "GUARANTEED_DIRECT_DEBIT_SEPA"
+      String(request.data.paymentMethod.type).toUpperCase() === "DIRECT_DEBIT_SEPA" ||
+      String(request.data.paymentMethod.type).toUpperCase() === "GUARANTEED_DIRECT_DEBIT_SEPA"
     ) {
       transaction.payment_data = {
         account_holder: String(requestData.paymentMethod.accHolder),
