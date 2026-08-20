@@ -3,11 +3,11 @@ import {
   PaymentComponent,
   PaymentComponentBuilder,
   PaymentMethod
-} from '../../../payment-enabler/payment-enabler';
+} from "../../../payment-enabler/payment-enabler";
 
 import { BaseComponent } from "../../base";
 
-import styles from '../../../style/style.module.scss';
+import styles from "../../../style/style.module.scss";
 import buttonStyles from "../../../style/button.module.scss";
 
 import {
@@ -58,70 +58,49 @@ export class Postfinance extends BaseComponent {
 
   mount(selector: string) {
 
-    /**
-     * Fix commercetools selector issue
-     */
     const safeSelector =
-      '#' + CSS.escape(
-        selector.substring(1)
-      );
+      "#" + CSS.escape(selector.substring(1));
 
     const container =
-      document.querySelector(
-        safeSelector
-      );
+      document.querySelector(safeSelector);
 
     if (!container) {
 
-      console.error(
-        'Container not found:',
+      console.warn(
+        "[PostFinance E-Finance] Container not found:",
         safeSelector
       );
 
       return;
     }
 
-    /**
-     * Same behavior as iDEAL
-     * Prevent radio button removal
-     */
     container.insertAdjacentHTML(
       "afterbegin",
       this._getTemplate()
     );
 
-    /**
-     * Update only current payment label
-     */
     setTimeout(() => {
 
       const paymentLabel =
-        container.querySelector(
-          'label'
-        );
+        container.querySelector("label");
 
       if (
         paymentLabel &&
         paymentLabel.textContent
           ?.toLowerCase()
-          .includes('postfinance')
+          .includes("postfinance")
       ) {
 
         paymentLabel.textContent =
-          'PostFinance E-Finance';
+          "PostFinance E-Finance";
       }
 
     }, 100);
 
-    /**
-     * Bind button event
-     */
     if (this.showPayButton) {
 
       const button =
-        document.querySelector(
-          "#purchaseOrderForm-paymentButton"
-        );
+        container.querySelector("#purchaseOrderForm-paymentButton");
 
       if (button) {
 
@@ -141,7 +120,7 @@ export class Postfinance extends BaseComponent {
   async submit() {
 
     this.sdk.init({
-      environment: this.environment
+      environment: this.environment,
     });
 
     const pathLocale =
@@ -166,7 +145,7 @@ export class Postfinance extends BaseComponent {
           PaymentOutcome.AUTHORIZED,
 
         lang:
-          pathLocale ?? 'de',
+          pathLocale ?? "de",
 
         path:
           baseSiteUrl,
@@ -198,8 +177,11 @@ export class Postfinance extends BaseComponent {
           await response.text();
 
         console.error(
-          'HTTP error response:',
-          errorText
+          "[PostFinance E-Finance] HTTP error:",
+          {
+            status: response.status,
+            body: errorText,
+          }
         );
 
         throw new Error(
@@ -210,14 +192,34 @@ export class Postfinance extends BaseComponent {
       const data =
         await response.json();
 
-      window.location.href =
-        data.txnSecret;
+      if (data?.txnSecret) {
+
+        window.location.href =
+          data.txnSecret;
+
+      } else {
+
+        this.onError(
+          data?.transactionStatusText ||
+          "Payment failed. Please try again."
+        );
+      }
 
     } catch (e) {
 
       console.error(
-        'PostFinance E-Finance payment error:',
-        e
+        "[PostFinance E-Finance] Submit error:",
+        {
+          message:
+            e instanceof Error
+              ? e.message
+              : String(e),
+
+          stack:
+            e instanceof Error
+              ? e.stack
+              : undefined,
+        }
       );
 
       this.onError(
@@ -240,15 +242,14 @@ export class Postfinance extends BaseComponent {
       ? `
       <div class="${styles.wrapper}">
 
-        <p>
-          ${description}
-        </p>
+        <p>${description}</p>
 
         <button
           class="${buttonStyles.button}
           ${buttonStyles.fullWidth}
           ${styles.submitButton}"
           id="purchaseOrderForm-paymentButton"
+          type="button"
         >
           ${locale.startsWith("de")
             ? "Bezahlen"
