@@ -1412,66 +1412,107 @@ public async failureResponse({ data }: { data: any }) {
     webhookData: any[],
     req?: FastifyRequest,
   ): Promise<any> {
-    if (!Array.isArray(webhookData) || webhookData.length === 0) {
+  
+    if (
+      !Array.isArray(webhookData) ||
+      webhookData.length === 0
+    ) {
       throw new Error("Invalid webhook payload");
     }
-
+  
     const webhook = webhookData[0];
+  
     await this.validateRequiredParameters(webhook);
     await this.validateChecksum(webhook);
+  
     if (req) {
       await this.validateIpAddress(req);
     }
+  
     const eventType = webhook.event?.type;
     const status = webhook.result?.status;
-    const lang = webhook.custom?.lang;
+  
+    log.info("Processing Novalnet webhook", {
+      eventType,
+      status,
+      tid: webhook?.transaction?.tid,
+      paymentType: webhook?.transaction?.payment_type,
+    });
+  
     this.getOrderDetails(webhook);
+  
     if (status !== "SUCCESS") {
-      return { message: "Webhook ignored (non-success)" };
+  
+      log.warn("Webhook ignored", {
+        eventType,
+        status,
+        tid: webhook?.transaction?.tid,
+      });
+  
+      return {
+        message: "Webhook ignored (non-success)",
+      };
     }
+  
     let transactionComments: string | undefined;
+  
     switch (eventType) {
+  
       case "PAYMENT":
-        transactionComments = await this.handlePayment(webhook);
+        transactionComments =
+          await this.handlePayment(webhook);
         break;
-
+  
       case "TRANSACTION_CAPTURE":
-        transactionComments = await this.handleTransactionCapture(webhook);
+        transactionComments =
+          await this.handleTransactionCapture(webhook);
         break;
-
+  
       case "TRANSACTION_CANCEL":
-        transactionComments = await this.handleTransactionCancel(webhook);
+        transactionComments =
+          await this.handleTransactionCancel(webhook);
         break;
-
+  
       case "TRANSACTION_REFUND":
-        transactionComments = await this.handleTransactionRefund(webhook);
+        transactionComments =
+          await this.handleTransactionRefund(webhook);
         break;
-
+  
       case "TRANSACTION_UPDATE":
-        transactionComments = await this.handleTransactionUpdate(webhook);
+        transactionComments =
+          await this.handleTransactionUpdate(webhook);
         break;
-
+  
       case "CREDIT":
-        transactionComments = await this.handleCredit(webhook);
+        transactionComments =
+          await this.handleCredit(webhook);
         break;
-
+  
       case "CHARGEBACK":
-        transactionComments = await this.handleChargeback(webhook);
+        transactionComments =
+          await this.handleChargeback(webhook);
         break;
-
+  
       case "PAYMENT_REMINDER_1":
       case "PAYMENT_REMINDER_2":
-        transactionComments = await this.handlePaymentReminder(webhook);
+        transactionComments =
+          await this.handlePaymentReminder(webhook);
         break;
-
+  
       case "SUBMISSION_TO_COLLECTION_AGENCY":
-        transactionComments = await this.handleCollectionSubmission(webhook);
+        transactionComments =
+          await this.handleCollectionSubmission(webhook);
         break;
-
+  
       default:
         log.warn(`Unhandled Novalnet event type: ${eventType}`);
     }
-
+  
+    log.info("Webhook processed", {
+      eventType,
+      tid: webhook?.transaction?.tid,
+    });
+  
     return {
       message: transactionComments,
       eventType,
