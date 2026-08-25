@@ -901,14 +901,32 @@ public async failureResponse({ data }: { data: any }) {
     });
 
     let paymentActionUrl = "payment";
-    if (paymentAction === "authorize") {
-      const orderTotal = String(parsedCart?.taxedPrice?.totalGross?.centAmount);
-      paymentActionUrl = orderTotal >= minimumAmount ? "authorize" : "payment";
+    
+    if (paymentAction?.toLowerCase() === "authorize") {
+    
+      const orderTotal =
+        Number(parsedCart?.taxedPrice?.totalGross?.centAmount ?? 0);
+    
+      const authorizeAmount =
+        Number(minimumAmount ?? 0);
+
+      if (authorizeAmount <= 0) {
+    
+        paymentActionUrl = "authorize";
+    
+      } else {
+        paymentActionUrl =
+          orderTotal >= authorizeAmount
+            ? "authorize"
+            : "payment";
+      }
     }
+    
     const url =
       paymentActionUrl === "payment"
         ? "https://payport.novalnet.de/v2/payment"
         : "https://payport.novalnet.de/v2/authorize";
+        
     let responseData: any;
     try {
 
