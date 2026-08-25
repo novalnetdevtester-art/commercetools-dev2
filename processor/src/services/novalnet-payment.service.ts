@@ -739,6 +739,50 @@ public async failureResponse({ data }: { data: any }) {
     const processorURL = Context.getProcessorUrlFromContext();
     const sessionId = Context.getCtSessionIdFromContext();
 
+    const hookurl = new URL(
+      "/novalnletWebhook",
+      processorURL,
+    );
+
+    hookurl.searchParams.set(
+      "paymentReference",
+      ctPayment.id,
+    );
+
+    hookurl.searchParams.set(
+      "ctsid",
+      sessionId,
+    );
+
+    hookurl.searchParams.set(
+      "orderNumber",
+      orderNumber,
+    );
+
+    hookurl.searchParams.set(
+      "ctPaymentID",
+      ctPayment.id,
+    );
+
+    hookurl.searchParams.set(
+      "pspReference",
+      pspReference,
+    );
+
+    hookurl.searchParams.set(
+      "lang",
+      lang,
+    );
+
+    hookurl.searchParams.set(
+      "path",
+      String(
+        request.data?.path ?? "",
+      ),
+    );
+    
+    transaction.hook_url = hookurl;
+
     if (String(request.data.paymentMethod.type).toUpperCase() === "CREDITCARD") {
       transaction.payment_data = {
         pan_hash: String(
@@ -753,6 +797,7 @@ public async failureResponse({ data }: { data: any }) {
         const {
           returnUrl,
           errorReturnUrl,
+          hookUrl,
         } =
           this.createPaymentReturnUrls({
             processorURL,
@@ -774,6 +819,9 @@ public async failureResponse({ data }: { data: any }) {
 
         transaction.error_return_url =
           errorReturnUrl;
+
+        transaction.hook_url =
+          hookUrl;
       }
     }
 
@@ -2164,6 +2212,7 @@ public async createRedirectPayment(
   const {
     returnUrl,
     errorReturnUrl,
+    hookUrl,
   } =
     this.createPaymentReturnUrls({
       processorURL,
@@ -2214,6 +2263,9 @@ public async createRedirectPayment(
 
     error_return_url:
       errorReturnUrl,
+
+    hook_url:
+      hookUrl,
 
     order_no:
       orderNumber,
@@ -2622,9 +2674,50 @@ public async createRedirectPayment(
     path,
   );
 
+  const hookUrl = new URL(
+    "/novalnletWebhook",
+    processorURL,
+  );
+
+  hookUrl.searchParams.set(
+    "paymentReference",
+    paymentReference,
+  );
+
+  hookUrl.searchParams.set(
+    "ctsid",
+    sessionId,
+  );
+
+  hookUrl.searchParams.set(
+    "orderNumber",
+    orderNumber,
+  );
+
+  hookUrl.searchParams.set(
+    "ctPaymentID",
+    ctPaymentID,
+  );
+
+  hookUrl.searchParams.set(
+    "pspReference",
+    pspReference,
+  );
+
+  hookUrl.searchParams.set(
+    "lang",
+    lang,
+  );
+
+  hookUrl.searchParams.set(
+    "path",
+    path,
+  );
+
   return {
     returnUrl: successUrl.toString(),
     errorReturnUrl: failureUrl.toString(),
+    hookUrl: hookUrl.toString(),
   };
 }
 
