@@ -2593,6 +2593,7 @@ public async createRedirectPayment(
 }): {
   returnUrl: string;
   errorReturnUrl: string;
+  hookUrl: string;
 } {
   const successUrl = new URL(
     "/success",
