@@ -247,7 +247,7 @@ export const paymentRoutes = async (
   });
 
   fastify.post<{ Body: any }>(
-    "/webhook",
+    "/novalnletWebhook",
     async (req, reply) => {
       try {
         const body = req.body;
