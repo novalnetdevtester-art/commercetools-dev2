@@ -1465,6 +1465,7 @@ public async failureResponse({ data }: { data: any }) {
       !Array.isArray(webhookData) ||
       webhookData.length === 0
     ) {
+      log.info("Invalid webhook payload");
       throw new Error("Invalid webhook payload");
     }
   
@@ -1829,59 +1830,89 @@ public async failureResponse({ data }: { data: any }) {
 
       for (const param of mandatory[category]) {
         if (!payload[category][param]) {
+          log.info(`Missing parameter ${param} in ${category}`);
           throw new Error(`Missing parameter ${param} in ${category}`);
         }
       }
     }
   }
 
-  public async validateIpAddress(req: FastifyRequest): Promise<void> {
-    const novalnetHost = "pay-nn.de";
-    const { address: novalnetHostIP } = await dns.lookup(novalnetHost);
+public async validateIpAddress(
+  req: FastifyRequest
+): Promise<void> {
 
-    if (!novalnetHostIP) {
-      throw new Error("Novalnet HOST IP missing");
-    }
+  const webhookTestMode =
+    String(getConfig()?.novalnetWebhookTestMode);
 
-    const requestReceivedIP = await this.getRemoteAddress(req, novalnetHostIP);
-    const webhookTestMode = String(getConfig()?.novalnetWebhookTestMode);
-    if (novalnetHostIP !== requestReceivedIP && webhookTestMode == "0") {
-      throw new Error(`Unauthorized access from the IP ${requestReceivedIP}`);
-    }
+  if (webhookTestMode === "1") {
+    return;
   }
 
-  public async getRemoteAddress(
+  const novalnetHostIPs =
+    await dns.resolve4("pay-nn.de");
+
+  if (!novalnetHostIPs.length) {
+
+    log.error("Novalnet HOST IP missing");
+
+    throw new Error("Novalnet HOST IP missing");
+  }
+
+  const isAuthorized =
+    this.validateRequestIp(req, novalnetHostIPs);
+
+  if (!isAuthorized) {
+
+    log.warn("Unauthorized webhook IP", {
+      requestIp: req.ip,
+      forwardedFor: req.headers["x-forwarded-for"],
+      realIp: req.headers["x-real-ip"],
+      allowedIps: novalnetHostIPs,
+    });
+
+    throw new Error(
+      `Unauthorized access from IP ${req.ip}`
+    );
+  }
+}
+
+  private validateRequestIp(
     req: FastifyRequest,
-    novalnetHostIP: string,
-  ): Promise<string> {
+    novalnetHostIPs: string[]
+  ): boolean {
+  
     const headers = req.headers;
-
-    const ipKeys = [
-      "HTTP_X_FORWARDED_HOST",
-      "HTTP_X_FORWARDED_FOR",
-      "HTTP_X_REAL_IP",
-      "HTTP_CLIENT_IP",
-      "HTTP_X_FORWARDED",
-      "HTTP_X_CLUSTER_CLIENT_IP",
-      "HTTP_FORWARDED_FOR",
-      "HTTP_FORWARDED",
-      "REMOTE_ADDR",
+  
+    const remoteAddrHeaders = [
+      "x-forwarded-host",
+      "x-client-ip",
+      "x-real-ip",
+      "x-forwarded-for",
+      "x-forwarded",
+      "x-cluster-client-ip",
+      "forwarded-for",
+      "forwarded",
     ];
-
-    for (const key of ipKeys) {
-      const value = headers[key] as string | undefined;
-
-      if (value) {
-        if (key === "HTTP_X_FORWARDED_FOR" || key === "HTTP_X_FORWARDED_HOST") {
-          const forwardedIPs = value.split(",").map((ip) => ip.trim());
-          return forwardedIPs.includes(novalnetHostIP)
-            ? novalnetHostIP
-            : forwardedIPs[0];
-        }
-        return value;
+  
+    for (const header of remoteAddrHeaders) {
+  
+      const value = headers[header] as string | undefined;
+  
+      if (!value) {
+        continue;
+      }
+  
+      const headerValues =
+        value.split(",").map(v => v.trim());
+  
+      if (
+        headerValues.some(ip => novalnetHostIPs.includes(ip))
+      ) {
+        return true;
       }
     }
-    return req.ip;
+  
+    return novalnetHostIPs.includes(req.ip);
   }
 
   public validateChecksum(payload: any) {
