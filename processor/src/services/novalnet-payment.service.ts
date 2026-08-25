@@ -1429,8 +1429,11 @@ public async failureResponse({ data }: { data: any }) {
       await this.validateIpAddress(req);
     }
   
-    const eventType = webhook.event?.type;
-    const status = webhook.result?.status;
+    const eventType =
+      webhook.event?.type;
+  
+    const status =
+      webhook.result?.status;
   
     log.info("Processing Novalnet webhook", {
       eventType,
@@ -1454,7 +1457,8 @@ public async failureResponse({ data }: { data: any }) {
       };
     }
   
-    let transactionComments: string | undefined;
+    let transactionComments:
+      string | undefined;
   
     switch (eventType) {
   
@@ -1505,7 +1509,10 @@ public async failureResponse({ data }: { data: any }) {
         break;
   
       default:
-        log.warn(`Unhandled Novalnet event type: ${eventType}`);
+  
+        log.warn(
+          `Unhandled Novalnet event type: ${eventType}`
+        );
     }
   
     log.info("Webhook processed", {
