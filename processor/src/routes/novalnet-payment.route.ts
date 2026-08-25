@@ -246,25 +246,73 @@ export const paymentRoutes = async (
     }
   });
 
-  fastify.post<{ Body: any }>("/webhook", async (req, reply) => {
-    try {
-      const body = req.body as Record<string, any> | any[];
-      const responseData = Array.isArray(body) ? body : [body];
-      const webhook = responseData[0] as Record<string, any>;
-      const serviceResponse =
-        await opts.paymentService.createWebhook(responseData);
-      return reply.code(200).send({
-        success: true,
-        data: serviceResponse,
-      });
-    } catch (error) {
-      log.error(error);
-      return reply.code(500).send({
-        success: false,
-        message: "Webhook processing failed",
-      });
+  fastify.post<{ Body: any }>(
+    "/webhook",
+    async (req, reply) => {
+      try {
+        const body = req.body;
+        const responseData = Array.isArray(body)
+          ? body
+          : [body];
+  
+        if (!responseData.length || !responseData[0]) {
+  
+          log.error("Webhook received empty payload");
+  
+          return reply.code(400).send({
+            success: false,
+            message: "Empty webhook payload",
+          });
+        }
+  
+        const webhook = responseData[0];
+  
+        log.info("Webhook received", {
+          eventType: webhook?.event?.type,
+          tid:
+            webhook?.transaction?.tid ??
+            webhook?.transaction?.tid_status,
+          paymentType:
+            webhook?.transaction?.payment_type,
+        });
+  
+        const serviceResponse =
+          await opts.paymentService.createWebhook(
+            responseData,
+            req
+          );
+  
+        log.info("Webhook processed successfully", {
+          eventType: webhook?.event?.type,
+          tid: webhook?.transaction?.tid,
+        });
+  
+        return reply.code(200).send({
+          success: true,
+          data: serviceResponse,
+        });
+  
+      } catch (error) {
+  
+        log.error("Webhook processing failed", {
+          message:
+            error instanceof Error
+              ? error.message
+              : String(error),
+  
+          stack:
+            error instanceof Error
+              ? error.stack
+              : undefined,
+        });
+  
+        return reply.code(500).send({
+          success: false,
+          message: "Webhook processing failed",
+        });
+      }
     }
-  });
+  );
 
   fastify.post("/getCreditcardConfig", async (req, reply) => {
     const config = getConfig();
