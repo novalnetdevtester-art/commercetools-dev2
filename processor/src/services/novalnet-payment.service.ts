@@ -37,6 +37,7 @@ import { projectApiRoot } from "../utils/ct-client";
 import customObjectService from "./ct-custom-object.service";
 import { SupportedLocale, t } from "../i18n";
 import { PaymentUpdateAction } from "@commercetools/platform-sdk";
+import JSONbig from "json-bigint";
 
 type NovalnetConfig = {
   testMode: string;
@@ -1320,6 +1321,7 @@ public async failureResponse({ data }: { data: any }) {
 
   private async callNovalnet<T = any>(url: string, payload: unknown): Promise<T> {
     const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
+  
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -1329,12 +1331,14 @@ public async failureResponse({ data }: { data: any }) {
       },
       body: JSON.stringify(payload),
     });
-
+  
     if (!response.ok) {
       throw new Error(`Novalnet API error: ${response.status}`);
     }
-
-    return (await response.json()) as T;
+  
+    const responseText = await response.text();
+  
+    return JSONbig({ storeAsString: true }).parse(responseText) as T;
   }
 
   private getLocalizedComment(
