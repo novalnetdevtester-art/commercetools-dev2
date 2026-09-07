@@ -1493,7 +1493,14 @@ public async failureResponse({ data }: { data: any }) {
   const webhook = webhookData[0];
 
   await this.validateRequiredParameters(webhook);
-
+  log.info("[CHECKSUM] Raw payload", {
+    eventTid: webhook.event?.tid,
+    transactionTid: webhook.transaction?.tid,
+    eventType: webhook.event?.type,
+    resultStatus: webhook.result?.status,
+    amount: webhook.transaction?.amount,
+    currency: webhook.transaction?.currency,
+  });
   await this.validateChecksum(webhook);
 
   if (req) {
