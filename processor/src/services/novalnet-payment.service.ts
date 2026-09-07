@@ -2266,88 +2266,52 @@ public async validateIpAddress(
     webhook: Record<string, any>,
   ): Promise<void> {
   
-    const accessKey = String(getConfig()?.novalnetPublicKey ?? "").trim();
-    const reversedAccessKey = accessKey.split("").reverse().join("");
+    const accessKey = String(getConfig()?.novalnetPublicKey ?? "")
+      .replace(/\r/g, "")
+      .replace(/\n/g, "")
+      .replace(/\uFEFF/g, "")
+      .replace(/\u200B/g, "")
+      .trim();
   
-    log.info("[CHECKSUM] Validation started", {
+    const reversedAccessKey = [...accessKey].reverse().join("");
+  
+    let checksumString =
+      String(webhook.event?.tid ?? "") +
+      String(webhook.event?.type ?? "") +
+      String(webhook.result?.status ?? "");
+  
+    if (webhook.transaction?.amount != null) {
+      checksumString += String(webhook.transaction.amount);
+    }
+  
+    if (webhook.transaction?.currency) {
+      checksumString += String(webhook.transaction.currency);
+    }
+  
+    checksumString += reversedAccessKey;
+  
+    const generatedChecksum = crypto
+      .createHash("sha256")
+      .update(checksumString, "utf8")
+      .digest("hex");
+  
+    log.info("[CHECKSUM] Validation", {
       tid: webhook.event?.tid,
       eventType: webhook.event?.type,
       status: webhook.result?.status,
       amount: webhook.transaction?.amount,
       currency: webhook.transaction?.currency,
-      receivedChecksum: webhook.event?.checksum,
-      accesssKey: accessKey,
-      reverseddAccessKey: reversedAccessKey
-    });
-  
-    let checksumString =
-      `${webhook.event?.tid ?? ""}` +
-      `${webhook.event?.type ?? ""}` +
-      `${webhook.result?.status ?? ""}`;
-  
-    log.info("[CHECKSUM] Base string", {
-      checksumString,
-    });
-  
-    if (webhook.transaction?.amount != null) {
-      checksumString += String(webhook.transaction.amount);
-  
-      log.info("[CHECKSUM] Amount appended", {
-        amount: webhook.transaction.amount,
-        checksumString,
-      });
-    }
-  
-    if (webhook.transaction?.currency) {
-      checksumString += String(webhook.transaction.currency);
-  
-      log.info("[CHECKSUM] Currency appended", {
-        currency: webhook.transaction.currency,
-        checksumString,
-      });
-    }
-  
-    if (accessKey) {
-      checksumString += reversedAccessKey;
-  
-      log.info("[CHECKSUM] Access key appended", {
-        accessKeyLength: accessKey.length,
-        reversedKeyPreview: `${reversedAccessKey.substring(0, 4)}****`,
-        checksumStringLength: checksumString.length,
-      });
-    } else {
-      log.warn("[CHECKSUM] Access key is empty");
-    }
-  
-    const generatedChecksum = crypto
-      .createHash("sha256")
-      .update(checksumString)
-      .digest("hex");
-  
-    log.info("[CHECKSUM] Generated checksum", {
+      keyLength: accessKey.length,
       generatedChecksum,
       receivedChecksum: webhook.event?.checksum,
       matched: generatedChecksum === webhook.event?.checksum,
     });
   
     if (generatedChecksum !== webhook.event?.checksum) {
-  
-      log.error("[CHECKSUM] Validation failed", {
-        tid: webhook.event?.tid,
-        eventType: webhook.event?.type,
-        checksumString,
-        generatedChecksum,
-        receivedChecksum: webhook.event?.checksum,
-      });
-  
       throw new Error("Checksum validation failed");
     }
-  
-    log.info("[CHECKSUM] Validation successful", {
-      tid: webhook.event?.tid,
-    });
   }
-
+  
   public async getOrderDetails(payload: any) {
     const paymentIdValue = payload.custom.inputval1;
     const pspReference = payload.custom.inputval2;
