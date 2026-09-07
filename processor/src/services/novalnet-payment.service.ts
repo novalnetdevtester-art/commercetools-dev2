@@ -2266,21 +2266,15 @@ public async validateIpAddress(
     webhook: Record<string, any>,
   ): Promise<void> {
   
-    const accessKey = String(getConfig()?.novalnetPublicKey ?? "")
-      .replace(/\r/g, "")
-      .replace(/\n/g, "")
-      .replace(/\uFEFF/g, "")
-      .replace(/\u200B/g, "")
-      .trim();
+    const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
   
-    const reversedAccessKey = [...accessKey].reverse().join("");
+    let checksumString = "";
   
-    let checksumString =
-      String(webhook.event?.tid ?? "") +
-      String(webhook.event?.type ?? "") +
-      String(webhook.result?.status ?? "");
+    checksumString += String(webhook.event?.tid ?? "");
+    checksumString += String(webhook.event?.type ?? "");
+    checksumString += String(webhook.result?.status ?? "");
   
-    if (webhook.transaction?.amount != null) {
+    if (webhook.transaction?.amount !== undefined) {
       checksumString += String(webhook.transaction.amount);
     }
   
@@ -2288,7 +2282,7 @@ public async validateIpAddress(
       checksumString += String(webhook.transaction.currency);
     }
   
-    checksumString += reversedAccessKey;
+    checksumString += accessKey.trim().split("").reverse().join("");
   
     const generatedChecksum = crypto
       .createHash("sha256")
@@ -2296,20 +2290,33 @@ public async validateIpAddress(
       .digest("hex");
   
     log.info("[CHECKSUM] Validation", {
-      tid: webhook.event?.tid,
+      eventTid: webhook.event?.tid,
+      transactionTid: webhook.transaction?.tid,
       eventType: webhook.event?.type,
       status: webhook.result?.status,
       amount: webhook.transaction?.amount,
       currency: webhook.transaction?.currency,
-      keyLength: accessKey.length,
+      keyLength: accessKey.trim().length,
+      checksumString,
       generatedChecksum,
       receivedChecksum: webhook.event?.checksum,
       matched: generatedChecksum === webhook.event?.checksum,
     });
   
     if (generatedChecksum !== webhook.event?.checksum) {
+  
+      log.error("[CHECKSUM] Validation failed", {
+        checksumString,
+        generatedChecksum,
+        receivedChecksum: webhook.event?.checksum,
+      });
+  
       throw new Error("Checksum validation failed");
     }
+  
+    log.info("[CHECKSUM] Validation successful", {
+      tid: webhook.event?.tid,
+    });
   }
   
   public async getOrderDetails(payload: any) {
