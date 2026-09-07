@@ -1497,7 +1497,7 @@ public async failureResponse({ data }: { data: any }) {
   await this.validateChecksum(webhook);
 
   if (req) {
-    await this.validateIpAddress(req);
+    //await this.validateIpAddress(req);
   }
 
   log.info("Resolving order details", {
