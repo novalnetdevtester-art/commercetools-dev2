@@ -2262,30 +2262,88 @@ public async validateIpAddress(
     return novalnetHostIPs.includes(req.ip);
   }
 
-  public validateChecksum(payload: any) {
-    const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
-    if (!accessKey) {
-      log.warn("NOVALNET_ACCESS_KEY not configured");
-      return;
+  private async validateChecksum(
+    webhook: Record<string, any>,
+  ): Promise<void> {
+  
+    const accessKey = String(getConfig()?.novalnetPublicKey ?? "").trim();
+    const reversedAccessKey = accessKey.split("").reverse().join("");
+  
+    log.info("[CHECKSUM] Validation started", {
+      tid: webhook.event?.tid,
+      eventType: webhook.event?.type,
+      status: webhook.result?.status,
+      amount: webhook.transaction?.amount,
+      currency: webhook.transaction?.currency,
+      receivedChecksum: webhook.event?.checksum,
+    });
+  
+    let checksumString =
+      `${webhook.event?.tid ?? ""}` +
+      `${webhook.event?.type ?? ""}` +
+      `${webhook.result?.status ?? ""}`;
+  
+    log.info("[CHECKSUM] Base string", {
+      checksumString,
+    });
+  
+    if (webhook.transaction?.amount != null) {
+      checksumString += String(webhook.transaction.amount);
+  
+      log.info("[CHECKSUM] Amount appended", {
+        amount: webhook.transaction.amount,
+        checksumString,
+      });
     }
-
-    let token = payload.event.tid + payload.event.type + payload.result.status;
-    if (payload.transaction?.amount) {
-      token += payload.transaction.amount;
+  
+    if (webhook.transaction?.currency) {
+      checksumString += String(webhook.transaction.currency);
+  
+      log.info("[CHECKSUM] Currency appended", {
+        currency: webhook.transaction.currency,
+        checksumString,
+      });
     }
-
-    if (payload.transaction?.currency) {
-      token += payload.transaction.currency;
+  
+    if (accessKey) {
+      checksumString += reversedAccessKey;
+  
+      log.info("[CHECKSUM] Access key appended", {
+        accessKeyLength: accessKey.length,
+        reversedKeyPreview: `${reversedAccessKey.substring(0, 4)}****`,
+        checksumStringLength: checksumString.length,
+      });
+    } else {
+      log.warn("[CHECKSUM] Access key is empty");
     }
-
-    token += accessKey.split("").reverse().join("");
+  
     const generatedChecksum = crypto
       .createHash("sha256")
-      .update(token)
+      .update(checksumString)
       .digest("hex");
-    if (generatedChecksum !== payload.event.checksum) {
+  
+    log.info("[CHECKSUM] Generated checksum", {
+      generatedChecksum,
+      receivedChecksum: webhook.event?.checksum,
+      matched: generatedChecksum === webhook.event?.checksum,
+    });
+  
+    if (generatedChecksum !== webhook.event?.checksum) {
+  
+      log.error("[CHECKSUM] Validation failed", {
+        tid: webhook.event?.tid,
+        eventType: webhook.event?.type,
+        checksumString,
+        generatedChecksum,
+        receivedChecksum: webhook.event?.checksum,
+      });
+  
       throw new Error("Checksum validation failed");
     }
+  
+    log.info("[CHECKSUM] Validation successful", {
+      tid: webhook.event?.tid,
+    });
   }
 
   public async getOrderDetails(payload: any) {
