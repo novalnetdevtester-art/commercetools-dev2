@@ -1481,159 +1481,462 @@ public async failureResponse({ data }: { data: any }) {
   }
 
   public async createWebhook(
-    webhookData: any[],
-    req?: FastifyRequest,
-  ): Promise<any> {
+  webhookData: any[],
+  req?: FastifyRequest,
+): Promise<any> {
+
+  if (!Array.isArray(webhookData) || webhookData.length === 0) {
+    log.error("Invalid webhook payload");
+    throw new Error("Invalid webhook payload");
+  }
+
+  const webhook = webhookData[0];
+
+  await this.validateRequiredParameters(webhook);
+
+  await this.validateChecksum(webhook);
+
+  if (req) {
+    await this.validateIpAddress(req);
+  }
+
+  log.info("Resolving order details", {
+    orderNo: webhook.transaction?.order_no,
+    paymentReference: webhook.custom?.["ctpayment-id"],
+  });
+
+  await this.getOrderDetails(webhook);
   
-    if (
-      !Array.isArray(webhookData) ||
-      webhookData.length === 0
-    ) {
-      log.info("Invalid webhook payload");
-      throw new Error("Invalid webhook payload");
-    }
+  log.info("Order details resolved");
   
-    const webhook = webhookData[0];
-  
-    await this.validateRequiredParameters(webhook);
-    await this.validateChecksum(webhook);
-  
-    if (req) {
-      await this.validateIpAddress(req);
-    }
-  
-    const eventType =
-      webhook.event?.type;
-  
-    const status =
-      webhook.result?.status;
-  
-    log.info("Processing Novalnet webhook", {
+  const eventType = String(webhook.event?.type ?? "").toUpperCase();
+  const status = String(webhook.result?.status ?? "").toUpperCase();
+
+  log.info("Processing Novalnet webhook", {
+    eventType,
+    status,
+    tid: webhook?.event?.tid,
+    paymentType: webhook?.transaction?.payment_type,
+  });
+
+  if (status !== "SUCCESS") {
+
+    log.warn("Webhook ignored (non-success)", {
       eventType,
       status,
-      tid: webhook?.transaction?.tid,
-      paymentType: webhook?.transaction?.payment_type,
+      tid: webhook?.event?.tid,
     });
-  
-    this.getOrderDetails(webhook);
-  
-    if (status !== "SUCCESS") {
-  
-      log.warn("Webhook ignored", {
-        eventType,
-        status,
-        tid: webhook?.transaction?.tid,
-      });
-  
-      return {
-        message: "Webhook ignored (non-success)",
-      };
-    }
-  
-    let transactionComments:
-      string | undefined;
-  
-    switch (eventType) {
-  
-      case "PAYMENT":
-        transactionComments =
-          await this.handlePayment(webhook);
-        break;
-  
-      case "TRANSACTION_CAPTURE":
-        transactionComments =
-          await this.handleTransactionCapture(webhook);
-        break;
-  
-      case "TRANSACTION_CANCEL":
-        transactionComments =
-          await this.handleTransactionCancel(webhook);
-        break;
-  
-      case "TRANSACTION_REFUND":
-        transactionComments =
-          await this.handleTransactionRefund(webhook);
-        break;
-  
-      case "TRANSACTION_UPDATE":
-        transactionComments =
-          await this.handleTransactionUpdate(webhook);
-        break;
-  
-      case "CREDIT":
-        transactionComments =
-          await this.handleCredit(webhook);
-        break;
-  
-      case "CHARGEBACK":
-        transactionComments =
-          await this.handleChargeback(webhook);
-        break;
-  
-      case "PAYMENT_REMINDER_1":
-      case "PAYMENT_REMINDER_2":
-        transactionComments =
-          await this.handlePaymentReminder(webhook);
-        break;
-  
-      case "SUBMISSION_TO_COLLECTION_AGENCY":
-        transactionComments =
-          await this.handleCollectionSubmission(webhook);
-        break;
-  
-      default:
-  
-        log.warn(
-          `Unhandled Novalnet event type: ${eventType}`
-        );
-    }
-  
-    log.info("Webhook processed", {
-      eventType,
-      tid: webhook?.transaction?.tid,
-    });
-  
+
     return {
-      message: transactionComments,
-      eventType,
+      success: true,
+      message: "Webhook ignored (non-success)",
     };
   }
 
-  public async handlePayment(webhook: any) {
-    const transactionComments = `Novalnet Transaction ID: ${webhook.transaction.tid ?? "NN/A"}\nPayment Type: ${webhook.transaction.payment_type ?? "NN/A"}\n${webhook.result.status_text ?? "NN/A"}`;
+  let transactionComments: string | undefined;
 
-    return this.processWebhookTransaction({
-      webhook,
-      transactionComments,
-      state: this.getTransactionStatus(webhook?.transaction?.status).state,
-      setStatusInterfaceCode: true,
-    });
+  switch (eventType) {
+
+    case "PAYMENT":
+      transactionComments = await this.handlePayment(webhook);
+      break;
+
+    case "TRANSACTION_CAPTURE":
+      transactionComments = await this.handleTransactionCapture(webhook);
+      break;
+
+    case "TRANSACTION_CANCEL":
+      transactionComments = await this.handleTransactionCancel(webhook);
+      break;
+
+    case "TRANSACTION_REFUND":
+      transactionComments = await this.handleTransactionRefund(webhook);
+      break;
+
+    case "TRANSACTION_UPDATE":
+      transactionComments = await this.handleTransactionUpdate(webhook);
+      break;
+
+    case "CREDIT":
+      transactionComments = await this.handleCredit(webhook);
+      break;
+
+    case "CHARGEBACK":
+      transactionComments = await this.handleChargeback(webhook);
+      break;
+
+    case "PAYMENT_REMINDER_1":
+    case "PAYMENT_REMINDER_2":
+      transactionComments = await this.handlePaymentReminder(webhook);
+      break;
+
+    case "SUBMISSION_TO_COLLECTION_AGENCY":
+      transactionComments = await this.handleCollectionSubmission(webhook);
+      break;
+
+    default:
+
+      log.warn("Unhandled Novalnet event type", {
+        eventType,
+        tid: webhook?.event?.tid,
+      });
+
+      return {
+        success: true,
+        skipped: true,
+        eventType,
+      };
   }
 
-  public async handleTransactionCapture(webhook: any) {
-    const { date, time } = this.getFormattedDateTime();
-    const lang = webhook.custom.lang as SupportedLocale;
-    const transactionComments = this.getLocalizedComment("webhook.captureComment", lang, { date, time });
+  log.info("Webhook processed", {
+    eventType,
+    tid: webhook?.event?.tid,
+  });
 
-    return this.processWebhookTransaction({
-      webhook,
-      transactionComments,
-      state: this.getTransactionStatus(webhook?.transaction?.status).state,
-      setStatusInterfaceCode: true,
+  return {
+    success: true,
+    eventType,
+    message: transactionComments,
+  };
+}
+
+  private async handlePayment(
+    webhook: Record<string, any>,
+  ): Promise<string> {
+
+    const paymentId =
+      webhook.custom?.["ctpayment-id"] ??
+      webhook.custom?.inputval1;
+
+    const pspReference =
+      webhook.custom?.pspReference ??
+      webhook.custom?.inputval2;
+
+    const tid = String(webhook.event?.tid ?? "");
+
+    if (!paymentId || !pspReference) {
+      throw new Error("Missing payment reference");
+    }
+
+    log.info("[PAYMENT] Start", {
+      paymentId,
+      pspReference,
+      tid,
     });
+
+    const payment = (
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
+
+    const transaction =
+      payment.transactions?.find(
+        tx => tx.interactionId === pspReference,
+      );
+
+    if (!transaction) {
+
+      log.warn("[PAYMENT] Transaction not found", {
+        paymentId,
+        pspReference,
+      });
+
+      return "Transaction not found";
+    }
+
+    const currentState = transaction.state;
+
+    const novalnetStatus =
+      String(webhook.transaction?.status ?? "").toUpperCase();
+
+    let targetState: "Success" | "Pending" | "Failure";
+
+    switch (novalnetStatus) {
+      case "CONFIRMED":
+        targetState = "Success";
+        break;
+
+      case "ON_HOLD":
+        targetState = "Pending";
+        break;
+
+      case "FAILURE":
+        targetState = "Failure";
+        break;
+
+      default:
+        log.warn("[PAYMENT] Unsupported status", {
+          novalnetStatus,
+          tid,
+        });
+
+        return `Unsupported PAYMENT status: ${novalnetStatus}`;
+    }
+
+    log.info("[PAYMENT] State mapping", {
+      currentState,
+      targetState,
+      novalnetStatus,
+    });
+
+    if (currentState === targetState) {
+
+      log.info("[PAYMENT] Already synchronized", {
+        transactionId: transaction.id,
+        state: currentState,
+      });
+
+      return "Already synchronized";
+    }
+
+    const updateResult =
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: payment.version,
+            actions: [
+              {
+                action: "changeTransactionState",
+                transactionId: transaction.id,
+                state: targetState,
+              },
+              {
+                action: "setStatusInterfaceCode",
+                interfaceCode: String(
+                  webhook.transaction?.status_code ?? "",
+                ),
+              },
+            ],
+          },
+        })
+        .execute();
+
+    log.info("[PAYMENT] Payment updated", {
+      paymentId,
+      transactionId: transaction.id,
+      version: updateResult.body.version,
+      targetState,
+    });
+
+    await customObjectService.upsert(
+      "nn-private-data",
+      `${paymentId}-${pspReference}`,
+      {
+        paymentId,
+        pspReference,
+        orderNo: webhook.transaction?.order_no ?? "",
+        tid,
+        paymentMethod: webhook.transaction?.payment_type ?? "",
+        status: novalnetStatus,
+        amount: webhook.transaction?.amount ?? "",
+        email: webhook.customer?.email ?? "",
+      },
+    );
+
+    log.info("[PAYMENT] CustomObject updated", {
+      paymentId,
+      tid,
+    });
+
+    try {
+
+      const orderId =
+        await getOrderIdFromOrderNumber(
+          webhook.transaction?.order_no,
+        );
+
+      if (orderId) {
+
+        await this.updateOrderComments(orderId);
+
+        log.info("[PAYMENT] Order synchronized", {
+          orderId,
+        });
+      }
+
+    } catch (err) {
+
+      log.error("[PAYMENT] Order sync failed", err);
+    }
+
+    return `PAYMENT processed (${targetState})`;
   }
 
-  public async handleTransactionCancel(webhook: any) {
-    const { date, time } = this.getFormattedDateTime();
-    const lang = webhook.custom.lang as SupportedLocale;
-    const transactionComments = this.getLocalizedComment("webhook.cancelComment", lang, { date, time });
+  private async handleTransactionCapture(
+    webhook: Record<string, any>,
+  ): Promise<string> {
 
-    return this.processWebhookTransaction({
-      webhook,
-      transactionComments,
-      state: this.getTransactionStatus(webhook?.transaction?.status).state,
-      setStatusInterfaceCode: true,
+    const paymentId =
+      webhook.custom?.["ctpayment-id"] ??
+      webhook.custom?.inputval1;
+
+    const pspReference =
+      webhook.custom?.pspReference ??
+      webhook.custom?.inputval2;
+
+    const tid = String(webhook.event?.tid ?? "");
+
+    log.info("[CAPTURE] Start", {
+      paymentId,
+      pspReference,
+      tid,
     });
+
+    const payment = (
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
+
+    const transaction =
+      payment.transactions?.find(
+        tx => tx.interactionId === pspReference,
+      );
+
+    if (!transaction) {
+
+      log.warn("[CAPTURE] Transaction not found", {
+        paymentId,
+        pspReference,
+      });
+
+      return "Capture transaction not found";
+    }
+
+    if (transaction.state !== "Pending") {
+
+      log.warn("[CAPTURE] Invalid transaction state", {
+        currentState: transaction.state,
+        transactionId: transaction.id,
+      });
+
+      return `Capture skipped (${transaction.state})`;
+    }
+
+    const result =
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: payment.version,
+            actions: [
+              {
+                action: "changeTransactionState",
+                transactionId: transaction.id,
+                state: "Success",
+              },
+              {
+                action: "setStatusInterfaceCode",
+                interfaceCode: String(
+                  webhook.transaction?.status_code ?? "",
+                ),
+              },
+            ],
+          },
+        })
+        .execute();
+
+    log.info("[CAPTURE] Completed", {
+      paymentId,
+      transactionId: transaction.id,
+      version: result.body.version,
+    });
+
+    return "Capture processed";
+  }
+
+  private async handleTransactionCancel(
+    webhook: Record<string, any>,
+  ): Promise<string> {
+
+    const paymentId =
+      webhook.custom?.["ctpayment-id"] ??
+      webhook.custom?.inputval1;
+
+    const pspReference =
+      webhook.custom?.pspReference ??
+      webhook.custom?.inputval2;
+
+    const tid = String(webhook.event?.tid ?? "");
+
+    log.info("[CANCEL] Start", {
+      paymentId,
+      pspReference,
+      tid,
+    });
+
+    const payment = (
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
+
+    const transaction =
+      payment.transactions?.find(
+        tx => tx.interactionId === pspReference,
+      );
+
+    if (!transaction) {
+
+      log.warn("[CANCEL] Transaction not found", {
+        paymentId,
+        pspReference,
+      });
+
+      return "Cancel transaction not found";
+    }
+
+    if (transaction.state !== "Pending") {
+
+      log.warn("[CANCEL] Invalid transaction state", {
+        currentState: transaction.state,
+        transactionId: transaction.id,
+      });
+
+      return `Cancel skipped (${transaction.state})`;
+    }
+
+    const result =
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: payment.version,
+            actions: [
+              {
+                action: "changeTransactionState",
+                transactionId: transaction.id,
+                state: "Failure",
+              },
+              {
+                action: "setStatusInterfaceCode",
+                interfaceCode: String(
+                  webhook.transaction?.status_code ?? "",
+                ),
+              },
+            ],
+          },
+        })
+        .execute();
+
+    log.info("[CANCEL] Completed", {
+      paymentId,
+      transactionId: transaction.id,
+      version: result.body.version,
+    });
+
+    return "Cancel processed";
   }
 
   public async handleTransactionRefund(webhook: any) {
