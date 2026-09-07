@@ -1338,7 +1338,9 @@ public async failureResponse({ data }: { data: any }) {
   
     const responseText = await response.text();
   
-    return JSONbig({ storeAsString: true }).parse(responseText) as T;
+    const parsed = JSONbig({ storeAsString: true }).parse(responseText);
+  
+    return JSON.parse(JSON.stringify(parsed)) as T;
   }
 
   private getLocalizedComment(
