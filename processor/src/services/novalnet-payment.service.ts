@@ -1450,7 +1450,22 @@ public async failureResponse({ data }: { data: any }) {
   }
 
   const webhook = webhookData[0];
-
+  log.info("[WEBHOOK][RAW] Parsed payload", {
+    eventTid: webhook?.event?.tid,
+    eventTidType: typeof webhook?.event?.tid,
+    eventTidLength: String(webhook?.event?.tid ?? "").length,
+  
+    transactionTid: webhook?.transaction?.tid,
+    transactionTidType: typeof webhook?.transaction?.tid,
+    transactionTidLength: String(webhook?.transaction?.tid ?? "").length,
+  
+    amount: webhook?.transaction?.amount,
+    amountType: typeof webhook?.transaction?.amount,
+  
+    checksum: webhook?.event?.checksum,
+    checksumLength: String(webhook?.event?.checksum ?? "").length,
+  });
+    
   await this.validateRequiredParameters(webhook);
     
   await this.validateChecksum(webhook);
@@ -2345,25 +2360,30 @@ public async validateIpAddress(
     webhook: Record<string, any>,
   ): Promise<void> {
   
+    const tid = webhook.event?.tid;
+    const eventType = webhook.event?.type;
+    const resultStatus = webhook.result?.status;
+    const amount = webhook.transaction?.amount;
+    const currency = webhook.transaction?.currency;
+  
     let checksumString =
-      String(webhook.event?.tid ?? "") +
-      String(webhook.event?.type ?? "") +
-      String(webhook.result?.status ?? "");
+      String(tid ?? "") +
+      String(eventType ?? "") +
+      String(resultStatus ?? "");
   
-    if (webhook.transaction?.amount !== undefined) {
-      checksumString += String(webhook.transaction.amount);
+    if (amount !== undefined) {
+      checksumString += String(amount);
     }
   
-    if (webhook.transaction?.currency) {
-      checksumString += String(webhook.transaction.currency);
+    if (currency) {
+      checksumString += String(currency);
     }
   
-    const accessKey = String(
-      getConfig()?.novalnetPublicKey ?? ""
-    ).trim();
+    const accessKey = String(getConfig()?.novalnetPublicKey ?? "").trim();
+    const reversedKey = accessKey.split("").reverse().join("");
   
     if (accessKey) {
-      checksumString += accessKey.split("").reverse().join("");
+      checksumString += reversedKey;
     }
   
     const generatedChecksum = crypto
@@ -2371,13 +2391,59 @@ public async validateIpAddress(
       .update(checksumString)
       .digest("hex");
   
-    log.info("[CHECKSUM] Validation", {
-      tid: webhook.event?.tid,
-      eventType: webhook.event?.type,
-      status: webhook.result?.status,
-      amount: webhook.transaction?.amount,
-      currency: webhook.transaction?.currency,
-      keyLength: accessKey.length,
+    // Full input debug
+    log.info("[CHECKSUM][INPUT]", {
+      webhook,
+      tid,
+      tidType: typeof tid,
+      tidLength: String(tid ?? "").length,
+  
+      eventType,
+      eventTypeType: typeof eventType,
+  
+      resultStatus,
+      resultStatusType: typeof resultStatus,
+  
+      amount,
+      amountType: typeof amount,
+      amountLength: String(amount ?? "").length,
+  
+      currency,
+      currencyType: typeof currency,
+  
+      accessKey,
+      reversedKey,
+    });
+  
+    // TID precision check
+    log.info("[CHECKSUM][TID_PRECISION]", {
+      original: tid,
+      originalType: typeof tid,
+      asString: String(tid),
+      asNumber: Number(tid),
+      numberToString: Number(tid).toString(),
+      changed: String(tid) !== Number(tid).toString(),
+    });
+  
+    // Individual checksum parts
+    log.info("[CHECKSUM][PARTS]", {
+      tid: String(tid),
+      eventType: String(eventType),
+      resultStatus: String(resultStatus),
+      amount: String(amount),
+      currency: String(currency),
+      reversedKey,
+    });
+  
+    // Final checksum string
+    log.info("[CHECKSUM][STRING]", {
+      checksumString,
+      charLength: checksumString.length,
+      byteLength: Buffer.byteLength(checksumString, "utf8"),
+    });
+  
+    // Hash comparison
+    log.info("[CHECKSUM][HASH]", {
       generatedChecksum,
       receivedChecksum: webhook.event?.checksum,
       matched: generatedChecksum === webhook.event?.checksum,
@@ -2385,17 +2451,25 @@ public async validateIpAddress(
   
     if (generatedChecksum !== webhook.event?.checksum) {
   
-      log.error("[CHECKSUM] Validation failed", {
+      log.error("[CHECKSUM][FAILED]", {
+        webhook,
         checksumString,
         generatedChecksum,
         receivedChecksum: webhook.event?.checksum,
+        accessKey,
+        reversedKey,
+        tid,
+        tidType: typeof tid,
+        asNumber: Number(tid),
+        numberToString: Number(tid).toString(),
       });
   
       throw new Error("Checksum validation failed");
     }
   
     log.info("[CHECKSUM] Validation successful", {
-      tid: webhook.event?.tid,
+      tid,
+      generatedChecksum,
     });
   }
   
@@ -2568,11 +2642,6 @@ public async createRedirectPayment(
     getPaymentInterfaceFromContext() ||
     "mock";
 
-  /**
-   * --------------------------------------------------
-   * Create commercetools Payment
-   * --------------------------------------------------
-   */
   const ctPayment =
     await this.ctPaymentService.createPayment({
       amountPlanned: paymentAmount,
@@ -2604,19 +2673,10 @@ public async createRedirectPayment(
     paymentId: ctPayment.id,
   });
 
-  /**
-   * --------------------------------------------------
-   * Create PSP reference
-   * --------------------------------------------------
-   */
+
   const pspReference =
     randomUUID().toString();
 
-  /**
-   * --------------------------------------------------
-   * Create pending transaction
-   * --------------------------------------------------
-   */
   const transactionComments =
     `Novalnet Transaction ID: N/A\n` +
     `Payment Type: N/A\n` +
@@ -2655,11 +2715,6 @@ public async createRedirectPayment(
     } as unknown as any,
   } as any);
 
-  /**
-   * --------------------------------------------------
-   * Customer name
-   * --------------------------------------------------
-   */
   const orderNumber =
     getFutureOrderNumberFromContext() ??
     "";
@@ -2759,17 +2814,6 @@ public async createRedirectPayment(
       orderNumber,
   };
 
-  /**
-   * --------------------------------------------------
-   * CREDIT CARD
-   * --------------------------------------------------
-   *
-   * For credit card redirect payment,
-   * pan_hash and unique_id are mandatory.
-   *
-   * This is the same payment_data used
-   * by createDirectPayment().
-   */
   if (
     type.toUpperCase() ===
     "CREDITCARD"
@@ -2794,9 +2838,6 @@ public async createRedirectPayment(
       );
     }
 
-    /**
-     * Enable 3D Secure when configured.
-     */
     if (enforce3d === "1") {
       transaction.enforce_3d = 1;
     }
@@ -2810,11 +2851,6 @@ public async createRedirectPayment(
     };
   }
 
-  /**
-   * --------------------------------------------------
-   * Novalnet Payload
-   * --------------------------------------------------
-   */
   const novalnetPayload = {
     merchant: {
       signature:
@@ -2928,11 +2964,6 @@ public async createRedirectPayment(
     },
   };
 
-  /**
-   * --------------------------------------------------
-   * Call Novalnet
-   * --------------------------------------------------
-   */
   let parsedResponse: any = {};
 
   try {
@@ -2951,11 +2982,6 @@ public async createRedirectPayment(
     );
   }
 
-  /**
-   * --------------------------------------------------
-   * Validate Novalnet response
-   * --------------------------------------------------
-   */
   if (
     parsedResponse?.result
       ?.status !== "SUCCESS"
@@ -2986,11 +3012,6 @@ public async createRedirectPayment(
     );
   }
 
-  /**
-   * --------------------------------------------------
-   * Get redirect URL
-   * --------------------------------------------------
-   */
   const redirectUrl =
     parsedResponse
       ?.result
@@ -3019,11 +3040,6 @@ public async createRedirectPayment(
     );
   }
 
-  /**
-   * --------------------------------------------------
-   * Return redirect URL to frontend
-   * --------------------------------------------------
-   */
   return {
     paymentReference:
       ctPaymentId,
