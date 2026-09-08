@@ -745,7 +745,7 @@ public async failureResponse({ data }: { data: any }) {
       processorURL,
     );
     
-    transaction.hook_url = hookUrl;
+    transaction.hook_url = hookUrl.toString();
 
     if (String(request.data.paymentMethod.type).toUpperCase() === "CREDITCARD") {
       transaction.payment_data = {
@@ -2715,7 +2715,11 @@ public async createRedirectPayment(
       ),
     });
 
-  const hookUrl = 
+  const hookUrl = new URL(
+     "/novalnletWebhook",
+     processorURL,
+  );
+    
   const transaction: Record<
     string,
     any
@@ -2749,7 +2753,7 @@ public async createRedirectPayment(
       errorReturnUrl,
 
     hook_url:
-      hookUrl,
+      hookUrl.toString(),
 
     order_no:
       orderNumber,
