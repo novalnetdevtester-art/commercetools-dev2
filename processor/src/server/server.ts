@@ -1,7 +1,6 @@
 import autoLoad from "@fastify/autoload";
 import cors from "@fastify/cors";
 import fastifyFormBody from "@fastify/formbody";
-import fastifyRawBody from "fastify-raw-body";
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
 import { join } from "path";
@@ -33,12 +32,6 @@ export const setupFastify = async () => {
   });
 
   await server.register(fastifyFormBody);
-
-  await server.register(fastifyRawBody, {
-    field: "rawBody",
-    encoding: "utf8",
-    runFirst: true,
-  });
 
   await server.register(requestContextPlugin);
 
