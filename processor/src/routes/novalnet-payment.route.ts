@@ -17,7 +17,6 @@ import {
 import { NovalnetPaymentService } from "../services/novalnet-payment.service";
 import { log } from "../libs/logger";
 import { getConfig } from "../config/config";
-import { Buffer } from "node:buffer";
 import JSONbig from "json-bigint";
 
 
@@ -252,21 +251,13 @@ export const paymentRoutes = async (
 
   fastify.post<{ Body: any }>(
     "/novalnletWebhook",
-    {
-      config: {
-        rawBody: true,
-      },
-    },
     async (req, reply) => {
       try {
-        const rawBody =
-        typeof req.rawBody === "string"
-          ? req.rawBody
-          : Buffer.isBuffer(req.rawBody)
-            ? req.rawBody.toString("utf8")
-            : JSON.stringify(req.body);
+        const parsedBody =
+          typeof req.body === "string"
+            ? JSONbig({ storeAsString: true }).parse(req.body)
+            : req.body;
 
-        const parsedBody = JSONbig({ storeAsString: true }).parse(rawBody);
         const responseData = Array.isArray(parsedBody)
           ? parsedBody
           : [parsedBody];
