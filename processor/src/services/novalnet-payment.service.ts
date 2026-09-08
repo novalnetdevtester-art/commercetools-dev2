@@ -740,49 +740,12 @@ public async failureResponse({ data }: { data: any }) {
     const processorURL = Context.getProcessorUrlFromContext();
     const sessionId = Context.getCtSessionIdFromContext();
 
-    const hookurl = new URL(
+    const hookUrl = new URL(
       "/novalnletWebhook",
       processorURL,
     );
-
-    hookurl.searchParams.set(
-      "paymentReference",
-      ctPayment.id,
-    );
-
-    hookurl.searchParams.set(
-      "ctsid",
-      sessionId,
-    );
-
-    hookurl.searchParams.set(
-      "orderNumber",
-      orderNumber,
-    );
-
-    hookurl.searchParams.set(
-      "ctPaymentID",
-      ctPayment.id,
-    );
-
-    hookurl.searchParams.set(
-      "pspReference",
-      pspReference,
-    );
-
-    hookurl.searchParams.set(
-      "lang",
-      lang,
-    );
-
-    hookurl.searchParams.set(
-      "path",
-      String(
-        request.data?.path ?? "",
-      ),
-    );
     
-    transaction.hook_url = hookurl;
+    transaction.hook_url = hookUrl;
 
     if (String(request.data.paymentMethod.type).toUpperCase() === "CREDITCARD") {
       transaction.payment_data = {
@@ -797,8 +760,7 @@ public async failureResponse({ data }: { data: any }) {
       if (String(enforce3d) === "1") {
         const {
           returnUrl,
-          errorReturnUrl,
-          hookUrl,
+          errorReturnUrl
         } =
           this.createPaymentReturnUrls({
             processorURL,
@@ -820,9 +782,6 @@ public async failureResponse({ data }: { data: any }) {
 
         transaction.error_return_url =
           errorReturnUrl;
-
-        transaction.hook_url =
-          hookUrl;
       }
     }
 
@@ -2741,8 +2700,7 @@ public async createRedirectPayment(
 
   const {
     returnUrl,
-    errorReturnUrl,
-    hookUrl,
+    errorReturnUrl
   } =
     this.createPaymentReturnUrls({
       processorURL,
@@ -2757,11 +2715,7 @@ public async createRedirectPayment(
       ),
     });
 
-  /**
-   * --------------------------------------------------
-   * Novalnet transaction
-   * --------------------------------------------------
-   */
+  const hookUrl = 
   const transaction: Record<
     string,
     any
@@ -3123,7 +3077,6 @@ public async createRedirectPayment(
 }): {
   returnUrl: string;
   errorReturnUrl: string;
-  hookUrl: string;
 } {
   const successUrl = new URL(
     "/success",
@@ -3201,46 +3154,6 @@ public async createRedirectPayment(
   );
 
   failureUrl.searchParams.set(
-    "path",
-    path,
-  );
-
-  const hookUrl = new URL(
-    "/novalnletWebhook",
-    processorURL,
-  );
-
-  hookUrl.searchParams.set(
-    "paymentReference",
-    paymentReference,
-  );
-
-  hookUrl.searchParams.set(
-    "ctsid",
-    sessionId,
-  );
-
-  hookUrl.searchParams.set(
-    "orderNumber",
-    orderNumber,
-  );
-
-  hookUrl.searchParams.set(
-    "ctPaymentID",
-    ctPaymentID,
-  );
-
-  hookUrl.searchParams.set(
-    "pspReference",
-    pspReference,
-  );
-
-  hookUrl.searchParams.set(
-    "lang",
-    lang,
-  );
-
-  hookUrl.searchParams.set(
     "path",
     path,
   );
