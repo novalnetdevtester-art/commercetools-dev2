@@ -3164,8 +3164,7 @@ public async createRedirectPayment(
 
   return {
     returnUrl: successUrl.toString(),
-    errorReturnUrl: failureUrl.toString(),
-    hookUrl: hookUrl.toString(),
+    errorReturnUrl: failureUrl.toString()
   };
 }
 
