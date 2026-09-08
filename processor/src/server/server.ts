@@ -1,7 +1,7 @@
 import autoLoad from "@fastify/autoload";
 import cors from "@fastify/cors";
 import fastifyFormBody from "@fastify/formbody";
-import fastifyRawBody from "@fastify/raw-body";
+import fastifyRawBody from "fastify-raw-body";
 import Fastify from "fastify";
 import { randomUUID } from "node:crypto";
 import { join } from "path";
