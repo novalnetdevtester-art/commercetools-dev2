@@ -1622,20 +1622,17 @@ public async failureResponse({ data }: { data: any }) {
       paymentId,
       pspReference,
       tid,
+      paymentType: webhook.transaction?.payment_type,
+      novalnetStatus: webhook.transaction?.status,
     });
   
-    const paymentResponse = await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .get()
-      .execute();
-  
-    const payment = paymentResponse.body;
-  
-    log.info("[PAYMENT] Payment loaded", {
-      version: payment.version,
-      transactions: payment.transactions?.length ?? 0,
-    });
+    const payment = (
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
   
     const transaction = payment.transactions?.find(
       tx => tx.interactionId === pspReference,
@@ -1651,6 +1648,8 @@ public async failureResponse({ data }: { data: any }) {
       return "Transaction not found";
     }
   
+    const currentState = transaction.state;
+  
     const novalnetStatus =
       String(webhook.transaction?.status ?? "").toUpperCase();
   
@@ -1662,67 +1661,97 @@ public async failureResponse({ data }: { data: any }) {
         targetState = "Success";
         break;
   
-      case "ON_HOLD":
-        targetState = "Pending";
-        break;
-  
       case "FAILURE":
         targetState = "Failure";
         break;
   
       default:
-  
-        log.warn("[PAYMENT] Unsupported status", {
-          novalnetStatus,
-          tid,
-        });
-  
-        return `Unsupported status: ${novalnetStatus}`;
+        targetState = "Pending";
+        break;
     }
   
-    log.info("[PAYMENT] State mapping", {
-      currentState: transaction.state,
-      targetState,
-    });
+    const transactionComments =
+      this.buildTransactionComments(webhook);
   
-    if (transaction.state === targetState) {
+    const actions: any[] = [];
+  
+    if (!payment.interfaceId) {
+  
+      actions.push({
+        action: "setInterfaceId",
+        interfaceId: tid,
+      });
+    }
+  
+    if (currentState !== targetState) {
+  
+      actions.push({
+        action: "changeTransactionState",
+        transactionId: transaction.id,
+        state: targetState,
+      });
+    }
+  
+    if (
+      transaction.custom?.type?.key === "novalnet-custom-field" &&
+      transaction.custom?.fields?.transactionComments !==
+        transactionComments
+    ) {
+  
+      actions.push({
+        action: "setTransactionCustomField",
+        transactionId: transaction.id,
+        name: "transactionComments",
+        value: transactionComments,
+      });
+    }
+  
+    const statusCode = String(
+      webhook.transaction?.status_code ?? "",
+    );
+  
+    if (
+      String(payment.statusInterfaceCode ?? "") !==
+      statusCode
+    ) {
+  
+      actions.push({
+        action: "setStatusInterfaceCode",
+        interfaceCode: statusCode,
+      });
+    }
+  
+    if (actions.length === 0) {
   
       log.info("[PAYMENT] Already synchronized", {
-        transactionId: transaction.id,
-        state: transaction.state,
+        paymentId,
+        tid,
       });
   
       return "Already synchronized";
     }
   
-    const updatedPayment = await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .post({
-        body: {
-          version: payment.version,
-          actions: [
-            {
-              action: "changeTransactionState",
-              transactionId: transaction.id,
-              state: targetState,
-            },
-            {
-              action: "setStatusInterfaceCode",
-              interfaceCode: String(
-                webhook.transaction?.status_code ?? "",
-              ),
-            },
-          ],
-        },
-      })
-      .execute();
+    log.info("[PAYMENT] Updating commercetools Payment", {
+      paymentId,
+      actions: actions.map(a => a.action),
+    });
+  
+    const updated =
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: payment.version,
+            actions,
+          },
+        })
+        .execute();
   
     log.info("[PAYMENT] Payment updated", {
       paymentId,
-      transactionId: transaction.id,
-      version: updatedPayment.body.version,
-      state: targetState,
+      version: updated.body.version,
+      targetState,
     });
   
     await customObjectService.upsert(
@@ -1736,17 +1765,43 @@ public async failureResponse({ data }: { data: any }) {
         paymentMethod: webhook.transaction?.payment_type ?? "",
         status: novalnetStatus,
         amount: webhook.transaction?.amount ?? "",
+        comments: transactionComments,
         email: webhook.customer?.email ?? "",
-        comments: `PAYMENT processed (${targetState})`,
       },
     );
   
-    log.info("[PAYMENT] Custom object updated", {
+    log.info("[PAYMENT] CustomObject updated", {
       paymentId,
       tid,
     });
   
-    return `PAYMENT processed (${targetState})`;
+    try {
+  
+      const orderId =
+        await getOrderIdFromOrderNumber(
+          webhook.transaction?.order_no,
+        );
+  
+      if (orderId) {
+  
+        await this.updateOrderComments(orderId);
+  
+        log.info("[PAYMENT] Order synchronized", {
+          orderId,
+        });
+      }
+  
+    } catch (err) {
+  
+      log.error("[PAYMENT] Order synchronization failed", err);
+    }
+  
+    log.info("[PAYMENT] Completed", {
+      paymentId,
+      tid,
+    });
+  
+    return `PAYMENT synchronized (${targetState})`;
   }
 
   private async handleTransactionCapture(
@@ -3269,6 +3324,53 @@ private async createPendingPaymentTransaction({
       transactionType,
       status,
     });
+  }
+
+    private buildTransactionComments(
+    webhook: Record<string, any>,
+  ): string {
+  
+    const tid = String(webhook.event?.tid ?? "");
+  
+    const paymentType =
+      webhook.transaction?.payment_type ?? "";
+  
+    const isTestMode =
+      webhook.transaction?.test_mode == 1;
+  
+    const lang =
+      webhook.custom?.lang ??
+      webhook.custom?.inputval3 ??
+      "en";
+  
+    const supportedLocales: SupportedLocale[] = [
+      "en",
+      "de",
+    ];
+  
+    const comments =
+      supportedLocales.reduce(
+        (acc, locale) => {
+  
+          acc[locale] = [
+            t(locale, "payment.transactionId", { tid }),
+            t(locale, "payment.paymentType", {
+              type: paymentType,
+            }),
+            isTestMode
+              ? t(locale, "payment.testMode")
+              : "",
+          ]
+            .filter(Boolean)
+            .join("\n");
+  
+          return acc;
+  
+        },
+        {} as Record<SupportedLocale, string>,
+      );
+  
+    return comments[lang] ?? comments.en;
   }
 
   public splitStreetByComma(street?: string): {
