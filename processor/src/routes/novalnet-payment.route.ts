@@ -292,23 +292,45 @@ export const paymentRoutes = async (
           data: serviceResponse,
         });
   
-      } catch (error) {
-  
+    } catch (error) {
+    
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown webhook error";
+    
         log.error("Webhook processing failed", {
-          message:
-            error instanceof Error
-              ? error.message
-              : String(error),
-  
-          stack:
-            error instanceof Error
-              ? error.stack
-              : undefined,
+          message,
+          stack: error instanceof Error ? error.stack : undefined,
         });
-  
+    
+        if (message.includes("Checksum validation failed")) {
+          return reply.code(400).send({
+            success: false,
+            message,
+          });
+        }
+    
+        if (message.includes("Unauthorized access")) {
+          return reply.code(403).send({
+            success: false,
+            message,
+          });
+        }
+    
+        if (
+          message.includes("Missing") ||
+          message.includes("Invalid webhook payload")
+        ) {
+          return reply.code(400).send({
+            success: false,
+            message,
+          });
+        }
+    
         return reply.code(500).send({
           success: false,
-          message: "Webhook processing failed",
+          message: "Internal server error",
         });
       }
     }
