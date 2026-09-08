@@ -272,6 +272,22 @@ export const paymentRoutes = async (
         }
   
         const webhook = responseData[0];
+
+        log.info("[WEBHOOK] Raw payload debug", {
+          eventType: webhook?.event?.type,
+          tid: webhook?.event?.tid,
+          transactionTid: webhook?.transaction?.tid,
+          eventTidType: typeof webhook?.event?.tid,
+          transactionTidType: typeof webhook?.transaction?.tid,
+          eventTidLength: String(webhook?.event?.tid ?? "").length,
+          transactionTidLength: String(webhook?.transaction?.tid ?? "").length,
+          checksum: webhook?.event?.checksum,
+          checksumLength: String(webhook?.event?.checksum ?? "").length,
+          amount: webhook?.transaction?.amount,
+          amountType: typeof webhook?.transaction?.amount,
+          currency: webhook?.transaction?.currency,
+          status: webhook?.result?.status,
+        });
   
         log.info("Webhook received", {
           eventType: webhook?.event?.type,
