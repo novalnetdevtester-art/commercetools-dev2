@@ -17,7 +17,9 @@ import {
 import { NovalnetPaymentService } from "../services/novalnet-payment.service";
 import { log } from "../libs/logger";
 import { getConfig } from "../config/config";
+import { Buffer } from "node:buffer";
 import JSONbig from "json-bigint";
+
 
 type PaymentRoutesOptions = {
   paymentService: NovalnetPaymentService;
@@ -252,7 +254,14 @@ export const paymentRoutes = async (
     "/novalnletWebhook",
     async (req, reply) => {
       try {
-        const parsedBody = JSONbig({ storeAsString: true }).parse(req.rawBody);
+        const rawBody =
+        typeof req.rawBody === "string"
+          ? req.rawBody
+          : Buffer.isBuffer(req.rawBody)
+            ? req.rawBody.toString("utf8")
+            : JSON.stringify(req.body);
+
+        const parsedBody = JSONbig({ storeAsString: true }).parse(rawBody);
         const responseData = Array.isArray(parsedBody)
           ? parsedBody
           : [parsedBody];
