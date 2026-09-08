@@ -2266,13 +2266,10 @@ public async validateIpAddress(
     webhook: Record<string, any>,
   ): Promise<void> {
   
-    const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
-    log.info("[CHECKSUM] accessKey", {accesskey: accessKey});
-    let checksumString = "";
-  
-    checksumString += String(webhook.event?.tid ?? "");
-    checksumString += String(webhook.event?.type ?? "");
-    checksumString += String(webhook.result?.status ?? "");
+    let checksumString =
+      String(webhook.event?.tid ?? "") +
+      String(webhook.event?.type ?? "") +
+      String(webhook.result?.status ?? "");
   
     if (webhook.transaction?.amount !== undefined) {
       checksumString += String(webhook.transaction.amount);
@@ -2282,22 +2279,26 @@ public async validateIpAddress(
       checksumString += String(webhook.transaction.currency);
     }
   
-    checksumString += accessKey.trim().split("").reverse().join("");
+    const accessKey = String(
+      getConfig()?.novalnetPublicKey ?? ""
+    ).trim();
+  
+    if (accessKey) {
+      checksumString += accessKey.split("").reverse().join("");
+    }
   
     const generatedChecksum = crypto
       .createHash("sha256")
-      .update(checksumString, "utf8")
+      .update(checksumString)
       .digest("hex");
   
     log.info("[CHECKSUM] Validation", {
-      eventTid: webhook.event?.tid,
-      transactionTid: webhook.transaction?.tid,
+      tid: webhook.event?.tid,
       eventType: webhook.event?.type,
       status: webhook.result?.status,
       amount: webhook.transaction?.amount,
       currency: webhook.transaction?.currency,
-      keyLength: accessKey.trim().length,
-      checksumString,
+      keyLength: accessKey.length,
       generatedChecksum,
       receivedChecksum: webhook.event?.checksum,
       matched: generatedChecksum === webhook.event?.checksum,
