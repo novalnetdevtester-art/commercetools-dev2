@@ -1622,8 +1622,9 @@ public async failureResponse({ data }: { data: any }) {
       paymentId,
       pspReference,
       tid,
+      eventType: webhook.event?.type,
       paymentType: webhook.transaction?.payment_type,
-      novalnetStatus: webhook.transaction?.status,
+      status: webhook.transaction?.status,
     });
   
     const payment = (
@@ -1634,19 +1635,35 @@ public async failureResponse({ data }: { data: any }) {
         .execute()
     ).body;
   
-    const transaction = payment.transactions?.find(
-      tx => tx.interactionId === pspReference,
-    );
+    log.info("[PAYMENT] Payment fetched", {
+      paymentId,
+      version: payment.version,
+      interfaceId: payment.interfaceId,
+      transactionCount: payment.transactions?.length ?? 0,
+    });
+  
+    const transaction = [...(payment.transactions ?? [])]
+      .reverse()
+      .find(tx => tx.interactionId === pspReference);
   
     if (!transaction) {
   
-      log.warn("[PAYMENT] Transaction not found", {
+      log.warn("[PAYMENT] Matching transaction not found", {
         paymentId,
         pspReference,
+        availableInteractionIds:
+          payment.transactions?.map(tx => tx.interactionId),
       });
   
       return "Transaction not found";
     }
+  
+    log.info("[PAYMENT] Transaction located", {
+      transactionId: transaction.id,
+      type: transaction.type,
+      currentState: transaction.state,
+      interactionId: transaction.interactionId,
+    });
   
     const currentState = transaction.state;
   
@@ -1670,11 +1687,18 @@ public async failureResponse({ data }: { data: any }) {
         break;
     }
   
+    log.info("[PAYMENT] State mapping", {
+      novalnetStatus,
+      currentState,
+      targetState,
+    });
+  
     const transactionComments =
       this.buildTransactionComments(webhook);
   
     const actions: any[] = [];
   
+    // Set interfaceId only once
     if (!payment.interfaceId) {
   
       actions.push({
@@ -1683,6 +1707,7 @@ public async failureResponse({ data }: { data: any }) {
       });
     }
   
+    // Synchronize transaction state
     if (currentState !== targetState) {
   
       actions.push({
@@ -1692,8 +1717,9 @@ public async failureResponse({ data }: { data: any }) {
       });
     }
   
+    // Update transaction comments only if custom exists
     if (
-      transaction.custom?.type?.key === "novalnet-custom-field" &&
+      transaction.custom &&
       transaction.custom?.fields?.transactionComments !==
         transactionComments
     ) {
@@ -1706,20 +1732,18 @@ public async failureResponse({ data }: { data: any }) {
       });
     }
   
-    const statusCode = String(
-      webhook.transaction?.status_code ?? "",
-    );
+    // Always synchronize interface status code
+    actions.push({
+      action: "setStatusInterfaceCode",
+      interfaceCode: String(
+        webhook.transaction?.status_code ?? "",
+      ),
+    });
   
-    if (
-      String(payment.statusInterfaceCode ?? "") !==
-      statusCode
-    ) {
-  
-      actions.push({
-        action: "setStatusInterfaceCode",
-        interfaceCode: statusCode,
-      });
-    }
+    log.info("[PAYMENT] Prepared actions", {
+      paymentId,
+      actions: actions.map(a => a.action),
+    });
   
     if (actions.length === 0) {
   
@@ -1730,11 +1754,6 @@ public async failureResponse({ data }: { data: any }) {
   
       return "Already synchronized";
     }
-  
-    log.info("[PAYMENT] Updating commercetools Payment", {
-      paymentId,
-      actions: actions.map(a => a.action),
-    });
   
     const updated =
       await projectApiRoot
@@ -1750,8 +1769,7 @@ public async failureResponse({ data }: { data: any }) {
   
     log.info("[PAYMENT] Payment updated", {
       paymentId,
-      version: updated.body.version,
-      targetState,
+      newVersion: updated.body.version,
     });
   
     await customObjectService.upsert(
@@ -1770,15 +1788,15 @@ public async failureResponse({ data }: { data: any }) {
       },
     );
   
-    log.info("[PAYMENT] CustomObject updated", {
+    log.info("[PAYMENT] CustomObject synchronized", {
       paymentId,
-      tid,
+      key: `${paymentId}-${pspReference}`,
     });
   
     try {
   
       const orderId =
-        await getOrderIdFromOrderNumber(
+        await this.getOrderIdFromOrderNumber(
           webhook.transaction?.order_no,
         );
   
@@ -1788,6 +1806,12 @@ public async failureResponse({ data }: { data: any }) {
   
         log.info("[PAYMENT] Order synchronized", {
           orderId,
+        });
+  
+      } else {
+  
+        log.warn("[PAYMENT] Order not found", {
+          orderNumber: webhook.transaction?.order_no,
         });
       }
   
@@ -3326,7 +3350,7 @@ private async createPendingPaymentTransaction({
     });
   }
 
-    private buildTransactionComments(
+  private buildTransactionComments(
     webhook: Record<string, any>,
   ): string {
   
@@ -3338,10 +3362,10 @@ private async createPendingPaymentTransaction({
     const isTestMode =
       webhook.transaction?.test_mode == 1;
   
-    const lang =
-      webhook.custom?.lang ??
-      webhook.custom?.inputval3 ??
-      "en";
+    const lang: SupportedLocale =
+      webhook.custom?.lang === "de"
+        ? "de"
+        : "en";
   
     const supportedLocales: SupportedLocale[] = [
       "en",
@@ -3370,7 +3394,149 @@ private async createPendingPaymentTransaction({
         {} as Record<SupportedLocale, string>,
       );
   
-    return comments[lang] ?? comments.en;
+    return comments[lang];
+  }
+
+   private async getOrderIdFromOrderNumber(
+    orderNumber: string,
+  ): Promise<string | undefined> {
+  
+    if (!orderNumber) {
+  
+      log.warn("[ORDER] Empty order number");
+  
+      return;
+    }
+  
+    const result =
+      await projectApiRoot
+        .orders()
+        .get({
+          queryArgs: {
+            where: `orderNumber="${orderNumber}"`,
+            limit: 1,
+          },
+        })
+        .execute();
+  
+    const orderId =
+      result.body.results[0]?.id;
+  
+    log.info("[ORDER] Lookup", {
+      orderNumber,
+      found: Boolean(orderId),
+      orderId,
+    });
+  
+    return orderId;
+  }
+
+    private async updateOrderComments(
+    orderId: string,
+  ): Promise<void> {
+  
+    log.info("[ORDER] Comment synchronization started", {
+      orderId,
+    });
+  
+    const order = (
+      await projectApiRoot
+        .orders()
+        .withId({ ID: orderId })
+        .get()
+        .execute()
+    ).body;
+  
+    const paymentId =
+      order.paymentInfo?.payments?.[0]?.id;
+  
+    if (!paymentId) {
+  
+      log.warn("[ORDER] No payment linked", {
+        orderId,
+      });
+  
+      return;
+    }
+  
+    const payment = (
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
+  
+    const transaction = [...(payment.transactions ?? [])]
+      .reverse()
+      .find(tx => tx.interactionId);
+  
+    if (!transaction) {
+  
+      log.warn("[ORDER] No transaction found", {
+        orderId,
+        paymentId,
+      });
+  
+      return;
+    }
+  
+    const pspReference =
+      transaction.interactionId;
+  
+    const customObject =
+      await customObjectService.get(
+        "nn-private-data",
+        `${paymentId}-${pspReference}`,
+      );
+  
+    const comments =
+      customObject?.value?.comments;
+  
+    if (!comments) {
+  
+      log.info("[ORDER] No comments found in CustomObject", {
+        paymentId,
+        pspReference,
+      });
+  
+      return;
+    }
+  
+    const currentComments =
+      order.custom?.fields?.transactionComments;
+  
+    if (currentComments === comments) {
+  
+      log.info("[ORDER] Comments already synchronized", {
+        orderId,
+      });
+  
+      return;
+    }
+  
+    const updated =
+      await projectApiRoot
+        .orders()
+        .withId({ ID: orderId })
+        .post({
+          body: {
+            version: order.version,
+            actions: [
+              {
+                action: "setCustomField",
+                name: "transactionComments",
+                value: comments,
+              },
+            ],
+          },
+        })
+        .execute();
+  
+    log.info("[ORDER] Comments updated", {
+      orderId,
+      version: updated.body.version,
+    });
   }
 
   public splitStreetByComma(street?: string): {
