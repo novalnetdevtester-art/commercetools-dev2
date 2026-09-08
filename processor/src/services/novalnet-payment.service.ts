@@ -1767,91 +1767,132 @@ public async failureResponse({ data }: { data: any }) {
       paymentId,
       pspReference,
       tid,
+      novalnetStatus: webhook.transaction?.status,
     });
   
-    const paymentResponse = await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .get()
-      .execute();
+    if (!paymentId || !pspReference) {
+      throw new Error("Missing payment reference");
+    }
   
-    const payment = paymentResponse.body;
+    const payment = (
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
   
-    const transaction = payment.transactions?.find(
+    const authorizationTx = payment.transactions?.find(
       tx => tx.interactionId === pspReference,
     );
   
-    if (!transaction) {
+    if (!authorizationTx) {
   
-      log.warn("[CAPTURE] Transaction not found", {
+      log.warn("[CAPTURE] Authorization transaction not found", {
         paymentId,
         pspReference,
       });
   
-      return "Capture transaction not found";
+      return "Authorization transaction not found";
     }
   
-    if (transaction.state !== "Pending") {
-  
-      log.warn("[CAPTURE] Invalid transaction state", {
-        currentState: transaction.state,
-        transactionId: transaction.id,
-      });
-  
-      return `Capture skipped (${transaction.state})`;
-    }
-  
-    const updatedPayment = await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .post({
-        body: {
-          version: payment.version,
-          actions: [
-            {
-              action: "changeTransactionState",
-              transactionId: transaction.id,
-              state: "Success",
-            },
-            {
-              action: "setStatusInterfaceCode",
-              interfaceCode: String(
-                webhook.transaction?.status_code ?? "",
-              ),
-            },
-          ],
-        },
-      })
-      .execute();
-  
-    log.info("[CAPTURE] Payment updated", {
-      paymentId,
-      transactionId: transaction.id,
-      version: updatedPayment.body.version,
-    });
-  
-    await customObjectService.upsert(
-      "nn-private-data",
-      `${paymentId}-${pspReference}`,
-      {
-        paymentId,
-        pspReference,
-        orderNo: webhook.transaction?.order_no ?? "",
-        tid,
-        paymentMethod: webhook.transaction?.payment_type ?? "",
-        status: "CONFIRMED",
-        amount: webhook.transaction?.amount ?? "",
-        email: webhook.customer?.email ?? "",
-        comments: "CAPTURE processed (Success)",
-      },
+    const existingChargeTx = payment.transactions?.find(
+      tx =>
+        tx.type === "Charge" &&
+        tx.interactionId === tid,
     );
   
-    log.info("[CAPTURE] Custom object updated", {
+    log.info("[CAPTURE] Current transaction status", {
+      authorizationId: authorizationTx.id,
+      authorizationType: authorizationTx.type,
+      authorizationState: authorizationTx.state,
+      chargeExists: !!existingChargeTx,
+      chargeState: existingChargeTx?.state,
+    });
+  
+    if (
+      existingChargeTx &&
+      existingChargeTx.state === "Success"
+    ) {
+  
+      log.info("[CAPTURE] Already captured - skipping", {
+        paymentId,
+        chargeTransactionId: existingChargeTx.id,
+        tid,
+      });
+  
+      return "Already captured";
+    }
+  
+    const actions: any[] = [];
+  
+    if (authorizationTx.state !== "Success") {
+  
+      actions.push({
+        action: "changeTransactionState",
+        transactionId: authorizationTx.id,
+        state: "Success",
+      });
+    }
+    
+    if (!existingChargeTx) {
+  
+      actions.push({
+        action: "addTransaction",
+        transaction: {
+          type: "Charge",
+          amount: authorizationTx.amount,
+          interactionId: tid,
+          state: "Success",
+          custom: authorizationTx.custom,
+        },
+      });
+    }
+  
+    actions.push({
+      action: "setStatusInterfaceCode",
+      interfaceCode: String(
+        webhook.transaction?.status_code ?? "",
+      ),
+    });
+  
+    if (actions.length === 1) {
+  
+      log.info("[CAPTURE] Nothing to update", {
+        paymentId,
+        tid,
+      });
+  
+      return "Already captured";
+    }
+  
+    const result =
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: payment.version,
+            actions,
+          },
+        })
+        .execute();
+  
+    const createdCharge = result.body.transactions?.find(
+      tx =>
+        tx.type === "Charge" &&
+        tx.interactionId === tid,
+    );
+  
+    log.info("[CAPTURE] Completed", {
       paymentId,
+      authorizationTransactionId: authorizationTx.id,
+      chargeTransactionId: createdCharge?.id,
+      version: result.body.version,
       tid,
     });
   
-    return "CAPTURE processed (Success)";
+    return "Capture processed";
   }
 
   private async handleTransactionCancel(
