@@ -252,11 +252,7 @@ export const paymentRoutes = async (
     "/novalnletWebhook",
     async (req, reply) => {
       try {
-        const parsedBody =
-          typeof req.body === "string"
-            ? JSONbig({ storeAsString: true }).parse(req.body)
-            : req.body;
-        
+        const parsedBody = JSONbig({ storeAsString: true }).parse(req.rawBody);
         const responseData = Array.isArray(parsedBody)
           ? parsedBody
           : [parsedBody];
