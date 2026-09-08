@@ -2267,7 +2267,7 @@ public async validateIpAddress(
   ): Promise<void> {
   
     const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
-  
+    log.info("[CHECKSUM] accessKey", {accesskey: accessKey};
     let checksumString = "";
   
     checksumString += String(webhook.event?.tid ?? "");
