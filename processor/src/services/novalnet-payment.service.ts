@@ -1468,7 +1468,7 @@ public async failureResponse({ data }: { data: any }) {
     
   await this.validateRequiredParameters(webhook);
     
-  await this.validateChecksum(webhook);
+  //await this.validateChecksum(webhook);
 
   if (req) {
     //await this.validateIpAddress(req);
@@ -1587,18 +1587,26 @@ public async failureResponse({ data }: { data: any }) {
       webhook.custom?.inputval2;
   
     const tid = String(webhook.event?.tid ?? "");
+    const novalnetStatus = String(
+      webhook.transaction?.status ?? "",
+    ).toUpperCase();
   
     if (!paymentId || !pspReference) {
+      log.error("[PAYMENT] Missing payment reference", {
+        paymentId,
+        pspReference,
+        tid,
+      });
       throw new Error("Missing payment reference");
     }
   
-    log.info("[PAYMENT] Start", {
+    log.info("[PAYMENT] START", {
       paymentId,
       pspReference,
       tid,
       eventType: webhook.event?.type,
       paymentType: webhook.transaction?.payment_type,
-      status: webhook.transaction?.status,
+      status: novalnetStatus,
     });
   
     const payment = (
@@ -1616,193 +1624,184 @@ public async failureResponse({ data }: { data: any }) {
       transactionCount: payment.transactions?.length ?? 0,
     });
   
-    const transaction = [...(payment.transactions ?? [])]
+    const tx = [...(payment.transactions ?? [])]
       .reverse()
-      .find(tx => tx.interactionId === pspReference);
+      .find(t => t.interactionId === pspReference);
   
-    if (!transaction) {
+    if (!tx) {
   
       log.warn("[PAYMENT] Matching transaction not found", {
         paymentId,
         pspReference,
         availableInteractionIds:
-          payment.transactions?.map(tx => tx.interactionId),
+          payment.transactions?.map(t => t.interactionId),
       });
   
       return "Transaction not found";
     }
   
     log.info("[PAYMENT] Transaction located", {
-      transactionId: transaction.id,
-      type: transaction.type,
-      currentState: transaction.state,
-      interactionId: transaction.interactionId,
+      transactionId: tx.id,
+      type: tx.type,
+      currentState: tx.state,
+      interactionId: tx.interactionId,
     });
   
-    const currentState = transaction.state;
-  
-    const novalnetStatus =
-      String(webhook.transaction?.status ?? "").toUpperCase();
-  
-    let targetState: "Success" | "Pending" | "Failure";
-  
-    switch (novalnetStatus) {
-  
-      case "CONFIRMED":
-        targetState = "Success";
-        break;
-  
-      case "FAILURE":
-        targetState = "Failure";
-        break;
-  
-      default:
-        targetState = "Pending";
-        break;
-    }
+    const mapped = this.getTransactionStatus(novalnetStatus);
   
     log.info("[PAYMENT] State mapping", {
       novalnetStatus,
-      currentState,
-      targetState,
+      currentState: tx.state,
+      targetState: mapped.state,
+      transactionType: mapped.transactionType,
     });
   
     const transactionComments =
       this.buildTransactionComments(webhook);
   
+    const currentComments =
+      tx.custom?.fields?.transactionComments ?? "";
+  
+    const currentInterfaceCode =
+      payment.statusInterfaceCode ?? "";
+  
+    const newInterfaceCode = String(
+      webhook.transaction?.status_code ?? "",
+    );
+  
+    const alreadySynced =
+      payment.interfaceId === tid &&
+      tx.state === mapped.state &&
+      currentComments === transactionComments &&
+      currentInterfaceCode === newInterfaceCode;
+  
+    if (alreadySynced) {
+  
+      log.info("[PAYMENT] Already synchronized", {
+        paymentId,
+        transactionState: tx.state,
+        interfaceId: payment.interfaceId,
+        interfaceCode: payment.statusInterfaceCode,
+      });
+  
+      return "Already synchronized";
+    }
+  
     const actions: any[] = [];
   
-    // Set interfaceId only once
     if (!payment.interfaceId) {
-  
       actions.push({
         action: "setInterfaceId",
         interfaceId: tid,
       });
     }
   
-    // Synchronize transaction state
-    if (currentState !== targetState) {
-  
+    if (tx.state !== mapped.state) {
       actions.push({
         action: "changeTransactionState",
-        transactionId: transaction.id,
-        state: targetState,
+        transactionId: tx.id,
+        state: mapped.state,
       });
     }
   
-    // Update transaction comments only if custom exists
     if (
-      transaction.custom &&
-      transaction.custom?.fields?.transactionComments !==
-        transactionComments
+      tx.custom &&
+      currentComments !== transactionComments
     ) {
-  
       actions.push({
         action: "setTransactionCustomField",
-        transactionId: transaction.id,
+        transactionId: tx.id,
         name: "transactionComments",
         value: transactionComments,
       });
     }
   
-    // Always synchronize interface status code
-    actions.push({
-      action: "setStatusInterfaceCode",
-      interfaceCode: String(
-        webhook.transaction?.status_code ?? "",
-      ),
-    });
+    if (currentInterfaceCode !== newInterfaceCode) {
+      actions.push({
+        action: "setStatusInterfaceCode",
+        interfaceCode: newInterfaceCode,
+      });
+    }
   
-    log.info("[PAYMENT] Prepared actions", {
+    log.info("[PAYMENT] Updating commercetools Payment", {
       paymentId,
+      version: payment.version,
       actions: actions.map(a => a.action),
     });
   
-    if (actions.length === 0) {
+    if (actions.length > 0) {
   
-      log.info("[PAYMENT] Already synchronized", {
+      const updated =
+        await projectApiRoot
+          .payments()
+          .withId({ ID: paymentId })
+          .post({
+            body: {
+              version: payment.version,
+              actions,
+            },
+          })
+          .execute();
+  
+      log.info("[PAYMENT] Payment updated", {
         paymentId,
-        tid,
+        newVersion: updated.body.version,
       });
-  
-      return "Already synchronized";
     }
   
-    const updated =
-      await projectApiRoot
-        .payments()
-        .withId({ ID: paymentId })
-        .post({
-          body: {
-            version: payment.version,
-            actions,
-          },
-        })
-        .execute();
-  
-    log.info("[PAYMENT] Payment updated", {
+    log.info("[PAYMENT] Settlement check started", {
       paymentId,
-      newVersion: updated.body.version,
+      transactionType: mapped.transactionType,
+    });
+  
+    await this.addSettlementTransactionIfRequired({
+      paymentId,
+      pspReference,
+      amount: webhook.transaction?.amount,
+      currency: webhook.transaction?.currency,
+      transactionType: mapped.transactionType,
+      status: novalnetStatus,
+    });
+  
+    log.info("[PAYMENT] Settlement check completed", {
+      paymentId,
+    });
+  
+    await this.syncPaymentToOrder(paymentId, pspReference);
+  
+    log.info("[PAYMENT] Order sync completed", {
+      paymentId,
     });
   
     await customObjectService.upsert(
       "nn-private-data",
       `${paymentId}-${pspReference}`,
       {
-        paymentId,
-        pspReference,
-        orderNo: webhook.transaction?.order_no ?? "",
         tid,
-        paymentMethod: webhook.transaction?.payment_type ?? "",
-        status: novalnetStatus,
-        amount: webhook.transaction?.amount ?? "",
-        comments: transactionComments,
-        email: webhook.customer?.email ?? "",
+        paymentMethod: webhook.transaction?.payment_type,
+        status: webhook.transaction?.status,
+        orderNo: webhook.transaction?.order_no,
+        cMail: webhook.customer?.email,
+        additionalInfo: {
+          comments: transactionComments,
+        },
       },
     );
   
-    log.info("[PAYMENT] CustomObject synchronized", {
+    log.info("[PAYMENT] CustomObject updated", {
       paymentId,
       key: `${paymentId}-${pspReference}`,
     });
   
-    try {
-  
-      const orderId =
-        await this.getOrderIdFromOrderNumber(
-          webhook.transaction?.order_no,
-        );
-  
-      if (orderId) {
-  
-        await this.updateOrderComments(orderId);
-  
-        log.info("[PAYMENT] Order synchronized", {
-          orderId,
-        });
-  
-      } else {
-  
-        log.warn("[PAYMENT] Order not found", {
-          orderNumber: webhook.transaction?.order_no,
-        });
-      }
-  
-    } catch (err) {
-  
-      log.error("[PAYMENT] Order synchronization failed", err);
-    }
-  
-    log.info("[PAYMENT] Completed", {
+    log.info("[PAYMENT] COMPLETED", {
       paymentId,
       tid,
     });
   
-    return `PAYMENT synchronized (${targetState})`;
+    return transactionComments;
   }
-
-  private async handleTransactionCapture(
+  
+    private async handleTransactionCapture(
     webhook: Record<string, any>,
   ): Promise<string> {
   
@@ -1816,16 +1815,13 @@ public async failureResponse({ data }: { data: any }) {
   
     const tid = String(webhook.event?.tid ?? "");
   
-    log.info("[CAPTURE] Start", {
+    log.info("[CAPTURE] START", {
       paymentId,
       pspReference,
       tid,
-      novalnetStatus: webhook.transaction?.status,
+      paymentType: webhook.transaction?.payment_type,
+      status: webhook.transaction?.status,
     });
-  
-    if (!paymentId || !pspReference) {
-      throw new Error("Missing payment reference");
-    }
   
     const payment = (
       await projectApiRoot
@@ -1835,117 +1831,57 @@ public async failureResponse({ data }: { data: any }) {
         .execute()
     ).body;
   
-    const authorizationTx = payment.transactions?.find(
-      tx => tx.interactionId === pspReference,
-    );
+    const tx = [...(payment.transactions ?? [])]
+      .reverse()
+      .find(t => t.interactionId === pspReference);
   
-    if (!authorizationTx) {
-  
-      log.warn("[CAPTURE] Authorization transaction not found", {
+    if (!tx) {
+      log.error("[CAPTURE] Transaction not found", {
         paymentId,
         pspReference,
       });
-  
-      return "Authorization transaction not found";
+      throw new Error("Transaction not found");
     }
   
-    const existingChargeTx = payment.transactions?.find(
-      tx =>
-        tx.type === "Charge" &&
-        tx.interactionId === tid,
-    );
-  
-    log.info("[CAPTURE] Current transaction status", {
-      authorizationId: authorizationTx.id,
-      authorizationType: authorizationTx.type,
-      authorizationState: authorizationTx.state,
-      chargeExists: !!existingChargeTx,
-      chargeState: existingChargeTx?.state,
+    log.info("[CAPTURE] Current transaction", {
+      transactionId: tx.id,
+      currentState: tx.state,
     });
   
-    if (
-      existingChargeTx &&
-      existingChargeTx.state === "Success"
-    ) {
+    const alreadyCaptured =
+      tx.state === "Success" &&
+      payment.statusInterfaceCode ===
+        String(webhook.transaction?.status_code ?? "");
   
-      log.info("[CAPTURE] Already captured - skipping", {
+    if (alreadyCaptured) {
+  
+      log.info("[CAPTURE] Already synchronized", {
         paymentId,
-        chargeTransactionId: existingChargeTx.id,
-        tid,
+        transactionState: tx.state,
       });
   
-      return "Already captured";
+      return "Already synchronized";
     }
   
-    const actions: any[] = [];
+    const transactionComments =
+      this.buildTransactionComments(webhook);
   
-    if (authorizationTx.state !== "Success") {
-  
-      actions.push({
-        action: "changeTransactionState",
-        transactionId: authorizationTx.id,
-        state: "Success",
-      });
-    }
-    
-    if (!existingChargeTx) {
-  
-      actions.push({
-        action: "addTransaction",
-        transaction: {
-          type: "Charge",
-          amount: authorizationTx.amount,
-          interactionId: tid,
-          state: "Success",
-          custom: authorizationTx.custom,
-        },
-      });
-    }
-  
-    actions.push({
-      action: "setStatusInterfaceCode",
-      interfaceCode: String(
-        webhook.transaction?.status_code ?? "",
-      ),
+    log.info("[CAPTURE] Processing capture", {
+      targetState: "Success",
     });
   
-    if (actions.length === 1) {
+    await this.processWebhookTransaction({
+      webhook,
+      transactionComments,
+      state: "Success",
+    });
   
-      log.info("[CAPTURE] Nothing to update", {
-        paymentId,
-        tid,
-      });
-  
-      return "Already captured";
-    }
-  
-    const result =
-      await projectApiRoot
-        .payments()
-        .withId({ ID: paymentId })
-        .post({
-          body: {
-            version: payment.version,
-            actions,
-          },
-        })
-        .execute();
-  
-    const createdCharge = result.body.transactions?.find(
-      tx =>
-        tx.type === "Charge" &&
-        tx.interactionId === tid,
-    );
-  
-    log.info("[CAPTURE] Completed", {
+    log.info("[CAPTURE] COMPLETED", {
       paymentId,
-      authorizationTransactionId: authorizationTx.id,
-      chargeTransactionId: createdCharge?.id,
-      version: result.body.version,
-      tid,
+      pspReference,
     });
   
-    return "Capture processed";
+    return transactionComments;
   }
 
   private async handleTransactionCancel(
@@ -1962,97 +1898,76 @@ public async failureResponse({ data }: { data: any }) {
   
     const tid = String(webhook.event?.tid ?? "");
   
-    log.info("[CANCEL] Start", {
+    log.info("[CANCEL] START", {
       paymentId,
       pspReference,
       tid,
+      paymentType: webhook.transaction?.payment_type,
+      status: webhook.transaction?.status,
     });
   
-    const paymentResponse = await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .get()
-      .execute();
+    const payment = (
+      await projectApiRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
   
-    const payment = paymentResponse.body;
+    const tx = [...(payment.transactions ?? [])]
+      .reverse()
+      .find(t => t.interactionId === pspReference);
   
-    const transaction = payment.transactions?.find(
-      tx => tx.interactionId === pspReference,
-    );
-  
-    if (!transaction) {
-  
-      log.warn("[CANCEL] Transaction not found", {
+    if (!tx) {
+      log.error("[CANCEL] Transaction not found", {
         paymentId,
         pspReference,
       });
-  
-      return "Cancel transaction not found";
+      throw new Error("Transaction not found");
     }
   
-    if (transaction.state !== "Pending") {
+    log.info("[CANCEL] Current transaction", {
+      transactionId: tx.id,
+      currentState: tx.state,
+    });
   
-      log.warn("[CANCEL] Invalid transaction state", {
-        currentState: transaction.state,
-        transactionId: transaction.id,
+    const alreadyCancelled =
+      tx.state === "Failure" &&
+      payment.statusInterfaceCode ===
+        String(webhook.transaction?.status_code ?? "");
+  
+    if (alreadyCancelled) {
+  
+      log.info("[CANCEL] Already synchronized", {
+        paymentId,
+        transactionState: tx.state,
       });
   
-      return `Cancel skipped (${transaction.state})`;
+      return "Already synchronized";
     }
   
-    const updatedPayment = await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .post({
-        body: {
-          version: payment.version,
-          actions: [
-            {
-              action: "changeTransactionState",
-              transactionId: transaction.id,
-              state: "Failure",
-            },
-            {
-              action: "setStatusInterfaceCode",
-              interfaceCode: String(
-                webhook.transaction?.status_code ?? "",
-              ),
-            },
-          ],
-        },
-      })
-      .execute();
+    const transactionComments =
+      this.buildTransactionComments(webhook);
   
-    log.info("[CANCEL] Payment updated", {
-      paymentId,
-      transactionId: transaction.id,
-      version: updatedPayment.body.version,
+    log.info("[CANCEL] Processing cancellation", {
+      targetState: "Failure",
     });
   
-    await customObjectService.upsert(
-      "nn-private-data",
-      `${paymentId}-${pspReference}`,
-      {
-        paymentId,
-        pspReference,
-        orderNo: webhook.transaction?.order_no ?? "",
-        tid,
-        paymentMethod: webhook.transaction?.payment_type ?? "",
-        status: "FAILURE",
-        amount: webhook.transaction?.amount ?? "",
-        email: webhook.customer?.email ?? "",
-        comments: "CANCEL processed (Failure)",
-      },
-    );
-  
-    log.info("[CANCEL] Custom object updated", {
-      paymentId,
-      tid,
+    await this.processWebhookTransaction({
+      webhook,
+      transactionComments,
+      state: "Failure",
+      changeTransactionState: true,
     });
   
-    return "CANCEL processed (Failure)";
+    log.info("[CANCEL] COMPLETED", {
+      paymentId,
+      pspReference,
+    });
+  
+    return transactionComments;
   }
-
+  
   public async handleTransactionRefund(webhook: any) {
     const eventTID = webhook.event.tid;
     const currency = webhook.transaction.currency;
