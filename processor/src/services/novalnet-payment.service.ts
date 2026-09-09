@@ -1417,26 +1417,50 @@ private async updatePaymentTransaction({
     });
   }
 
-  actions.push({
-    action: "setTransactionCustomField",
-    transactionId: tx.id,
-    name: "transactionComments",
-    value: finalComments,
-  });
-
-  if (setStatusInterfaceCode) {
+  if (existingComments !== finalComments) {
+    actions.push({
+      action: "setTransactionCustomField",
+      transactionId: tx.id,
+      name: "transactionComments",
+      value: finalComments,
+    });
+  }
+  
+  if (
+    setStatusInterfaceCode &&
+    currentInterfaceCode !== String(statusCode ?? "")
+  ) {
     actions.push({
       action: "setStatusInterfaceCode",
       interfaceCode: String(statusCode ?? ""),
     });
   }
-
-  if (changeTransactionState && state) {
+  
+  if (
+    changeTransactionState &&
+    state &&
+    tx.state !== state
+  ) {
     actions.push({
       action: "changeTransactionState",
       transactionId: tx.id,
       state,
     });
+  }
+
+    if (actions.length === 0) {
+  
+    log.info("[PAYMENT_TX] Already synchronized", {
+      paymentId,
+      transactionId: tx.id,
+      transactionState: tx.state,
+      interfaceCode: currentInterfaceCode,
+    });
+  
+    return {
+      txId: tx.id,
+      comments: existingComments,
+    };
   }
 
   log.info("[PAYMENT_TX] Updating Payment", {
@@ -1473,12 +1497,14 @@ private async processWebhookTransaction({
   state,
   setStatusInterfaceCode = true,
   changeTransactionState = true,
+  skipSettlement = false,
 }: {
   webhook: any;
   transactionComments: string;
   state?: "Initial" | "Pending" | "Success" | "Failure";
   setStatusInterfaceCode?: boolean;
   changeTransactionState?: boolean;
+  skipSettlement?: boolean;
 }) {
 
   const paymentId =
@@ -1519,10 +1545,8 @@ private async processWebhookTransaction({
     changeTransactionState,
   });
 
-  if (
-    changeTransactionState &&
-    mapped.transactionType !== "CancelAuthorization"
-  ) {
+  if (!skipSettlement &&
+      mapped.transactionType !== "CancelAuthorization") {
 
     log.info("[WEBHOOK_TX] Settlement validation", {
       paymentId,
@@ -1539,10 +1563,7 @@ private async processWebhookTransaction({
     });
   }
 
-  await this.syncPaymentToOrder(
-    paymentId,
-    pspReference,
-  );
+  await this.syncPaymentToOrder(paymentId, pspReference);
 
   log.info("[WEBHOOK_TX] COMPLETED", {
     paymentId,
@@ -2031,7 +2052,8 @@ private async handleTransactionCancel(
     webhook,
     transactionComments,
     state: "Failure",
-    changeTransactionState: false,
+    changeTransactionState: true,
+    skipSettlement: true,
   });
 
   log.info("[CANCEL] COMPLETED", {
