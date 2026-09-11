@@ -1678,7 +1678,7 @@ private async processWebhookTransaction({
     
   await this.validateRequiredParameters(webhook);
     
-  //await this.validateChecksum(webhook);
+  await this.validateChecksum(webhook);
 
   if (req) {
     //await this.validateIpAddress(req);
@@ -2785,7 +2785,6 @@ public async validateIpAddress(
       .update(checksumString)
       .digest("hex");
   
-    // Full input debug
     log.info("[CHECKSUM][INPUT]", {
       webhook,
       tid,
