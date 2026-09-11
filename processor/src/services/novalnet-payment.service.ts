@@ -1258,7 +1258,7 @@ public async failureResponse({ data }: { data: any }) {
       .execute()
       .catch(() => null);
   
-    const actions: OrderUpdateAction[] = [];
+    const actions: any[] = [];
   
     if (orderCommentType) {
   
@@ -1322,6 +1322,20 @@ public async failureResponse({ data }: { data: any }) {
       pspReference,
     });
   }
+
+  private async getOrderByPaymentId(paymentId: string) {
+  const result = await projectApiRoot
+    .orders()
+    .get({
+      queryArgs: {
+        where: `paymentInfo(payments(id="${paymentId}"))`,
+        limit: 1,
+      },
+    })
+    .execute();
+
+  return result.body.results[0] ?? null;
+}
 
 private getTransactionStatus(status?: string): {
   state: "Initial" | "Pending" | "Success" | "Failure";
@@ -2370,7 +2384,7 @@ private async handleTransactionRefund(
                   },
                   fields: {
                     transactionComments:
-                      refundComments,
+                      transactionComments,
                   },
                 },
               },
@@ -2411,7 +2425,7 @@ private async handleTransactionRefund(
       lastRefundAmount:
         refundAmount,
       additionalInfo: {
-        comments: refundComments,
+        comments: transactionComments,
       },
     },
   );
@@ -2436,7 +2450,7 @@ private async handleTransactionRefund(
     refundTid,
   });
 
-  return refundComments;
+  return transactionComments;
 }
 
 
