@@ -3696,7 +3696,7 @@ private buildTransactionComments(
     captureDate: webhook.transaction?.capture?.date,
     cancelDate: webhook.transaction?.cancel?.date,
     refundDate: webhook.transaction?.refund?.date,
-    eventTid,
+    eventTID,
   });
   switch (eventType) {
 
