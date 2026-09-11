@@ -3747,15 +3747,21 @@ private buildTransactionComments(
         time,
       });
 
-    case "TRANSACTION_REFUND":
+    case "TRANSACTION_REFUND": {
       return t(locale, "callback.refundComment", {
         eventTID: parentTID,
         refundTID: eventTID,
-        refundedAmount: (
-          Number(webhook.transaction?.refund?.amount ?? 0) / 100
-        ).toFixed(2),
-        currency: webhook.transaction?.currency,
+        refundedAmount: this.formatAmount(
+          webhook.transaction?.refund?.amount ?? 0,
+          webhook.transaction?.refund?.currency ??
+            webhook.transaction?.currency,
+          locale,
+        ),
+        currency:
+          webhook.transaction?.refund?.currency ??
+          webhook.transaction?.currency,
       });
+    }
 
     default:
       return "";
