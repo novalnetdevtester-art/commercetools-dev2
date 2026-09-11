@@ -1860,6 +1860,7 @@ private async handlePayment(
     this.buildTransactionComments(
       webhook,
       locale,
+      tx.state,
     );
 
   const currentComments =
@@ -3639,102 +3640,75 @@ private async createPendingPaymentTransaction({
     });
   }
 
-  private buildTransactionComments(
-    webhook: Record<string, any>,
-    locale: string,
-  ): string {
-  
-    const eventType = String(webhook.event?.type ?? "");
-    const status = String(webhook.transaction?.status ?? "").toUpperCase();
-  
-    const tid = String(
-      webhook.event?.parent_tid ??
-      webhook.event?.tid ??
-      "",
-    );
-  
-    const refundTid = String(
-      webhook.transaction?.refund?.tid ?? "",
-    );
-  
-    const amount = `${(
-      Number(webhook.transaction?.refund?.amount ?? 0) / 100
-    ).toFixed(2)} ${webhook.transaction?.currency ?? ""}`;
-  
-    const date = webhook.transaction?.date ?? "";
-  
-    switch (eventType) {
-  
-      case "PAYMENT":
-  
-        switch (status) {
-  
-          case "ON_HOLD":
-            return [
-              t(locale, "callback.payment.onHold", {
-                tid,
-                date,
-              }),
-            ].join("\n");
-  
-          case "PENDING":
-            return [
-              t(locale, "callback.payment.pending", {
-                tid,
-                date,
-              }),
-            ].join("\n");
-  
-          case "CONFIRMED":
-            return [
-              t(locale, "callback.payment.confirmed", {
-                tid,
-                date,
-              }),
-            ].join("\n");
-  
-          case "FAILURE":
-            return [
-              t(locale, "callback.payment.failure", {
-                tid,
-              }),
-            ].join("\n");
-  
-          default:
-            return "";
-        }
-  
-      case "TRANSACTION_CAPTURE":
-        return [
-          t(locale, "callback.capture", {
-            tid,
-            date,
-          }),
-        ].join("\n");
-  
-      case "TRANSACTION_CANCEL":
-        return [
-          t(locale, "callback.cancel", {
-            tid,
-            date,
-          }),
-        ].join("\n");
-  
-      case "TRANSACTION_REFUND":
-        return [
-          t(locale, "callback.refund", {
-            tid,
-            refundTid,
-            amount,
-            date,
-          }),
-        ].join("\n");
-  
-      default:
-        return "";
-    }
-  }
+private buildTransactionComments(
+  webhook: Record<string, any>,
+  locale: SupportedLocale,
+  previousState?: string,
+): string {
 
+  const eventType = String(webhook.event?.type ?? "");
+  const status = String(webhook.transaction?.status ?? "").toUpperCase();
+
+  const eventTID = String(webhook.event?.tid ?? "");
+  const parentTID = String(webhook.event?.parent_tid ?? "");
+
+  const dateTime = webhook.transaction?.date ?? "";
+  const [date = "", time = ""] = dateTime.split(" ");
+
+  switch (eventType) {
+
+    case "PAYMENT":
+
+      if (status === "ON_HOLD") {
+        return t(locale, "callback.paymentPendingToOnHold", {
+          eventTID,
+          date,
+          time,
+        });
+      }
+
+      if (status === "CONFIRMED") {
+        return t(
+          locale,
+          previousState === "Pending"
+            ? "callback.pendingToComplete"
+            : "callback.onholdToComplete",
+          {
+            eventTID,
+            date,
+            time,
+          },
+        );
+      }
+
+      return "";
+
+    case "TRANSACTION_CAPTURE":
+      return t(locale, "callback.captureComment", {
+        date,
+        time,
+      });
+
+    case "TRANSACTION_CANCEL":
+      return t(locale, "callback.cancelComment", {
+        date,
+        time,
+      });
+
+    case "TRANSACTION_REFUND":
+      return t(locale, "callback.refundComment", {
+        eventTID: parentTID,
+        refundTID: eventTID,
+        refundedAmount: (
+          Number(webhook.transaction?.refund?.amount ?? 0) / 100
+        ).toFixed(2),
+        currency: webhook.transaction?.currency,
+      });
+
+    default:
+      return "";
+  }
+}
    private async getOrderIdFromOrderNumber(
     orderNumber: string,
   ): Promise<string | undefined> {
