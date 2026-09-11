@@ -1874,7 +1874,6 @@ private async handlePayment(
     this.buildTransactionComments(
       webhook,
       locale,
-      tx.state,
     );
 
   const currentComments =
@@ -1890,7 +1889,6 @@ private async handlePayment(
   const alreadySynced =
     tx.type === mapped.transactionType &&
     tx.state === mapped.state &&
-    currentComments === transactionComments &&
     currentInterfaceCode === newInterfaceCode;
 
   if (alreadySynced) {
@@ -3657,7 +3655,6 @@ private async createPendingPaymentTransaction({
 private buildTransactionComments(
   webhook: Record<string, any>,
   locale: SupportedLocale,
-  previousState?: string,
 ): string {
 
   const eventType = String(webhook.event?.type ?? "");
@@ -3673,29 +3670,46 @@ private buildTransactionComments(
 
     case "PAYMENT":
 
-      if (status === "ON_HOLD") {
-        return t(locale, "callback.paymentPendingToOnHold", {
-          eventTID,
-          date,
-          time,
-        });
-      }
-
-      if (status === "CONFIRMED") {
-        return t(
-          locale,
-          previousState === "Pending"
-            ? "callback.pendingToComplete"
-            : "callback.onholdToComplete",
-          {
-            eventTID,
-            date,
-            time,
-          },
+case "PAYMENT": {
+      const paymentType = webhook.transaction?.payment_type ?? "";
+      const isTestMode = Number(webhook.transaction?.test_mode) === 1;
+    
+      const comments = [
+        t(locale, "payment.transactionId", { tid: eventTID }),
+        t(locale, "payment.paymentType", { type: paymentType }),
+        isTestMode ? t(locale, "payment.testMode") : "",
+      ];
+    
+      if (this.isBankTransferPayment(paymentType)) {
+        comments.push(
+          "",
+          t(locale, "payment.referenceText", {
+            amount: this.formatAmount(
+              webhook.transaction?.amount,
+              webhook.transaction?.currency,
+              locale,
+            ),
+          }),
+          t(locale, "payment.accountHolder", {
+            accountHolder: webhook.transaction?.bank_details?.account_holder ?? "",
+          }),
+          t(locale, "payment.iban", {
+            iban: webhook.transaction?.bank_details?.iban ?? "",
+          }),
+          t(locale, "payment.bic", {
+            bic: webhook.transaction?.bank_details?.bic ?? "",
+          }),
+          t(locale, "payment.bankName", {
+            bankName: webhook.transaction?.bank_details?.bank_name ?? "",
+          }),
+          t(locale, "payment.bankPlace", {
+            bankPlace: webhook.transaction?.bank_details?.bank_place ?? "",
+          }),
         );
       }
-
-      return "";
+    
+      return comments.filter(Boolean).join("\n");
+    }
 
     case "TRANSACTION_CAPTURE":
       return t(locale, "callback.captureComment", {
