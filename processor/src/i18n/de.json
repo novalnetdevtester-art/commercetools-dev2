@@ -3,22 +3,25 @@
     "transactionId": "Novalnet Transaktions-ID: {{tid}}",
     "paymentType": "Zahlungsart: {{type}}",
     "testMode": "Testmodus",
-    "referenceText": "Bitte überweisen Sie den Betrag von {{amount}} auf das folgende Konto ",
+    "referenceText": "Bitte überweisen Sie den Betrag von {{amount}} auf folgendes Konto",
     "accountHolder": "Kontoinhaber: {{accountHolder}}",
     "iban": "IBAN: {{iban}}",
     "bic": "BIC: {{bic}}",
-    "bankName": "BANK NAME {{bankName}}",
-    "bankPlace": "BANK PLACE {{bankPlace}}"
+    "bankName": "BANKNAME {{bankName}}",
+    "bankPlace": "BANKORT {{bankPlace}}"
   },
   "callback": {
-    "payment": {
-      "onHold": "Der Status der Transaktion mit der TID: {tid} wurde am {date} Uhr von ausstehend auf ausgesetzt geändert.",
-      "pending": "Die Transaktion mit der TID: {tid} befindet sich seit {date} in Bearbeitung.",
-      "confirmed": "Die Zahlung mit der TID: {tid} wurde am {date} erfolgreich bestätigt.",
-      "failure": "Die Zahlung mit der TID: {tid} ist fehlgeschlagen."
-    },
-    "capture": "Die Buchung wurde am {date} Uhr bestätigt.",
-    "cancel": "Die Transaktion wurde am {date} Uhr storniert.",
-    "refund": "Rückerstattung / Bookback erfolgreich ausgeführt für die TID: {tid} Betrag: {amount} am {date}. TID der Folgebuchung: {refundTid}"
+    "paymentPendingToOnHold": "Der Status der Transaktion mit der TID: {{eventTID}} wurde am {{date}} {{time}} Uhr von ausstehend auf ausgesetzt geändert.",
+    "pendingToComplete": "Der Status der Transaktion mit der TID: {{eventTID}} wurde am {{date}} {{time}} Uhr von ausstehend auf bestätigt geändert.",
+    "onholdToComplete": "Der Status der Transaktion mit der TID: {{eventTID}} wurde am {{date}} {{time}} Uhr von ausgesetzt auf bestätigt geändert.",
+    "captureComment": "Die Buchung wurde am {{date}} um {{time}} Uhr bestätigt.",
+    "cancelComment": "Die Transaktion wurde am {{date}} um {{time}} Uhr storniert.",
+    "refundComment": "Rückerstattung wurde für die TID: {{eventTID}} mit dem Betrag {{refundedAmount}} {{currency}} eingeleitet. Neue TID: {{refundTID}} für den rückerstatteten Betrag.",
+    "creditComment": "Gutschrift wurde erfolgreich für die TID: {{parentTID}} mit dem Betrag {{amount}} {{currency}} am {{date}} {{time}} erhalten. Bitte prüfen Sie die als BEZAHLT markierten Bestelldetails im Novalnet Admin Portal für die TID: {{transactionID}}.",
+    "paymentRemainderComment": "Zahlungserinnerung {{reminderIndex}} wurde an den Kunden gesendet.",
+    "collectionSubmissionComment": "Die Transaktion wurde an das Inkassobüro übergeben. Inkasso-Referenz: {{collectionReference}}",
+    "chargebackComment": "Chargeback erfolgreich ausgeführt für die TID: {{parentTID}} Betrag: {{amount}} {{currency}} am {{date}} {{time}}. TID der Folgebuchung: {{eventTID}}.",
+    "amountUpdateComment": "Transaktion erfolgreich aktualisiert für die TID: {{eventTID}} mit dem Betrag {{amount}} {{currency}}.",
+    "dueDateUpdateComment": "Transaktion erfolgreich aktualisiert für die TID: {{eventTID}} mit dem Betrag {{amount}} {{currency}} und Fälligkeitsdatum {{dueDate}}."
   }
 }
