@@ -249,126 +249,125 @@ export const paymentRoutes = async (
     }
   });
 
-  fastify.post<{ Body: any }>(
-    "/novalnletWebhook",
-    async (req, reply) => {
-      try {
-        
-          log.info("[WEBHOOK][BODY DEBUG]", {
-            bodyType: typeof req.body,
-            isBuffer: Buffer.isBuffer(req.body),
-            hasRawBody: "rawBody" in req,
-            rawBodyType: typeof (req as any).rawBody,
-        
-            eventTid: req.body?.event?.tid,
-            eventTidType: typeof req.body?.event?.tid,
-            eventTidLength: String(req.body?.event?.tid ?? "").length,
-        
-            transactionTid: req.body?.transaction?.tid,
-            transactionTidType: typeof req.body?.transaction?.tid,
-            transactionTidLength: String(req.body?.transaction?.tid ?? "").length,
-        
-            parentTid: req.body?.event?.parent_tid,
-            parentTidType: typeof req.body?.event?.parent_tid,
-            parentTidLength: String(req.body?.event?.parent_tid ?? "").length,
-          });
+fastify.post<{ Body: any }>(
+  "/novalnletWebhook",
+  async (req, reply) => {
+    try {
 
-        const parsedBody =
-          typeof req.body === "string"
-            ? JSONbig({ storeAsString: true }).parse(req.body)
-            : req.body;
+      log.info("[WEBHOOK][BODY DEBUG]", {
+        bodyType: typeof req.body,
+        isBuffer: Buffer.isBuffer(req.body),
+        hasRawBody: "rawBody" in req,
+        rawBodyType: typeof (req as any).rawBody,
 
-        const responseData = Array.isArray(parsedBody)
-          ? parsedBody
-          : [parsedBody];
-  
-        if (!responseData.length || !responseData[0]) {
-  
-          log.error("Webhook received empty payload");
-  
-          return reply.code(400).send({
-            success: false,
-            message: "Empty webhook payload",
-          });
-        }
-  
-        const webhook = responseData[0];
+        eventTid: (req.body as any)?.event?.tid,
+        eventTidType: typeof (req.body as any)?.event?.tid,
+        eventTidLength: String((req.body as any)?.event?.tid ?? "").length,
 
-        log.info("[WEBHOOK] recived Raw payload debug", {
-          eventType: webhook?.event?.type,
-          tid: webhook?.event?.tid,
-          transactionTid: webhook?.transaction?.tid,
-          eventTidType: typeof webhook?.event?.tid,
-          transactionTidType: typeof webhook?.transaction?.tid,
-          eventTidLength: String(webhook?.event?.tid ?? "").length,
-          transactionTidLength: String(webhook?.transaction?.tid ?? "").length,
-          checksum: webhook?.event?.checksum,
-          checksumLength: String(webhook?.event?.checksum ?? "").length,
-          amount: webhook?.transaction?.amount,
-          amountType: typeof webhook?.transaction?.amount,
-          currency: webhook?.transaction?.currency,
-          status: webhook?.result?.status,
-        });
-  
-        const serviceResponse =
-          await opts.paymentService.createWebhook(
-            responseData,
-            req
-          );
-  
-        log.info("Webhook processed successfully", {
-          eventType: webhook?.event?.type,
-          tid: webhook?.transaction?.tid,
-        });
-  
-        return reply.code(200).send({
-          success: true,
-          data: serviceResponse,
-        });
-  
-    } catch (error) {
-    
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Unknown webhook error";
-    
-        log.error("Webhook processing failed", {
-          message,
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-    
-        if (message.includes("Checksum validation failed")) {
-          return reply.code(400).send({
-            success: false,
-            message,
-          });
-        }
-    
-        if (message.includes("Unauthorized access")) {
-          return reply.code(403).send({
-            success: false,
-            message,
-          });
-        }
-    
-        if (
-          message.includes("Missing") ||
-          message.includes("Invalid webhook payload")
-        ) {
-          return reply.code(400).send({
-            success: false,
-            message,
-          });
-        }
-    
-        return reply.code(500).send({
+        transactionTid: (req.body as any)?.transaction?.tid,
+        transactionTidType: typeof (req.body as any)?.transaction?.tid,
+        transactionTidLength: String((req.body as any)?.transaction?.tid ?? "").length,
+
+        parentTid: (req.body as any)?.event?.parent_tid,
+        parentTidType: typeof (req.body as any)?.event?.parent_tid,
+        parentTidLength: String((req.body as any)?.event?.parent_tid ?? "").length,
+      });
+
+      const parsedBody: any =
+        typeof req.body === "string"
+          ? JSONbig({ storeAsString: true }).parse(req.body)
+          : req.body;
+
+      const responseData: Record<string, any>[] = Array.isArray(parsedBody)
+        ? parsedBody
+        : [parsedBody];
+
+      if (!responseData.length || !responseData[0]) {
+
+        log.error("Webhook received empty payload");
+
+        return reply.code(400).send({
           success: false,
-          message: "Internal server error",
+          message: "Empty webhook payload",
         });
       }
+
+      const webhook: Record<string, any> = responseData[0];
+
+      log.info("[WEBHOOK] recived Raw payload debug", {
+        eventType: webhook.event?.type,
+        tid: webhook.event?.tid,
+        transactionTid: webhook.transaction?.tid,
+        eventTidType: typeof webhook.event?.tid,
+        transactionTidType: typeof webhook.transaction?.tid,
+        eventTidLength: String(webhook.event?.tid ?? "").length,
+        transactionTidLength: String(webhook.transaction?.tid ?? "").length,
+        checksum: webhook.event?.checksum,
+        checksumLength: String(webhook.event?.checksum ?? "").length,
+        amount: webhook.transaction?.amount,
+        amountType: typeof webhook.transaction?.amount,
+        currency: webhook.transaction?.currency,
+        status: webhook.result?.status,
+      });
+
+      const serviceResponse = await opts.paymentService.createWebhook(
+        responseData,
+        req,
+      );
+
+      log.info("Webhook processed successfully", {
+        eventType: webhook.event?.type,
+        tid: webhook.transaction?.tid,
+      });
+
+      return reply.code(200).send({
+        success: true,
+        data: serviceResponse,
+      });
+
+    } catch (error) {
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unknown webhook error";
+
+      log.error("Webhook processing failed", {
+        message,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      if (message.includes("Checksum validation failed")) {
+        return reply.code(400).send({
+          success: false,
+          message,
+        });
+      }
+
+      if (message.includes("Unauthorized access")) {
+        return reply.code(403).send({
+          success: false,
+          message,
+        });
+      }
+
+      if (
+        message.includes("Missing") ||
+        message.includes("Invalid webhook payload")
+      ) {
+        return reply.code(400).send({
+          success: false,
+          message,
+        });
+      }
+
+      return reply.code(500).send({
+        success: false,
+        message: "Internal server error",
+      });
     }
-  );
+  },
+);
 
   fastify.post("/getCreditcardConfig", async (req, reply) => {
     const config = getConfig();
