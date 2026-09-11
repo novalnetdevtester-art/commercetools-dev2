@@ -3690,7 +3690,14 @@ private buildTransactionComments(
 
   const dateTime = webhook.transaction?.date ?? "";
   const [date = "", time = ""] = dateTime.split(" ");
-
+  log.info("[CALLBACK] Date Debug", {
+    eventType,
+    transactionDate: webhook.transaction?.date,
+    captureDate: webhook.transaction?.capture?.date,
+    cancelDate: webhook.transaction?.cancel?.date,
+    refundDate: webhook.transaction?.refund?.date,
+    eventTid,
+  });
   switch (eventType) {
 
     case "PAYMENT": {
