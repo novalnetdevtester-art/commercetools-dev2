@@ -1865,10 +1865,16 @@ private async handlePayment(
 
   const order = await this.getOrderByPaymentId(paymentId);
   
-  const locale =
-    order?.locale ??
-    webhook.custom?.lang ??
-    "en";
+  const lang = webhook.custom?.lang as SupportedLocale;
+  const locale: SupportedLocale = lang === "en" ? "en" : "de";
+  
+  log.info("[I18N] Locale Debug", {
+    eventType: webhook.event?.type,
+    paymentId,
+    orderLocale: order?.locale,
+    webhookLang: webhook.custom?.lang,
+    selectedLocale: locale,
+  });
   
   const transactionComments =
     this.buildTransactionComments(
@@ -2014,10 +2020,16 @@ private async handleTransactionCapture(
 
   const order = await this.getOrderByPaymentId(paymentId);
   
-  const locale =
-    order?.locale ??
-    webhook.custom?.lang ??
-    "en";
+  const lang = webhook.custom?.lang as SupportedLocale;
+  const locale: SupportedLocale = lang === "en" ? "en" : "de";
+  
+  log.info("[I18N] Locale Debug", {
+    eventType: webhook.event?.type,
+    paymentId,
+    orderLocale: order?.locale,
+    webhookLang: webhook.custom?.lang,
+    selectedLocale: locale,
+  });
   
   const transactionComments =
     this.buildTransactionComments(
@@ -2136,10 +2148,16 @@ private async handleTransactionCancel(
 
   const order = await this.getOrderByPaymentId(paymentId);
   
-  const locale =
-    order?.locale ??
-    webhook.custom?.lang ??
-    "en";
+  const lang = webhook.custom?.lang as SupportedLocale;
+  const locale: SupportedLocale = lang === "en" ? "en" : "de";
+  
+  log.info("[I18N] Locale Debug", {
+    eventType: webhook.event?.type,
+    paymentId,
+    orderLocale: order?.locale,
+    webhookLang: webhook.custom?.lang,
+    selectedLocale: locale,
+  });
   
   const transactionComments =
     this.buildTransactionComments(
@@ -2340,10 +2358,16 @@ private async handleTransactionRefund(
 
   const order = await this.getOrderByPaymentId(paymentId);
   
-  const locale =
-    order?.locale ??
-    webhook.custom?.lang ??
-    "en";
+  const lang = webhook.custom?.lang as SupportedLocale;
+  const locale: SupportedLocale = lang === "en" ? "en" : "de";
+  
+  log.info("[I18N] Locale Debug", {
+    eventType: webhook.event?.type,
+    paymentId,
+    orderLocale: order?.locale,
+    webhookLang: webhook.custom?.lang,
+    selectedLocale: locale,
+  });
   
   const transactionComments =
     this.buildTransactionComments(
