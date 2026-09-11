@@ -3682,86 +3682,79 @@ private buildTransactionComments(
 ): string {
 
   const eventType = String(webhook.event?.type ?? "");
-
   const eventTID = String(webhook.event?.tid ?? "");
   const parentTID = String(webhook.event?.parent_tid ?? "");
+
+  const paymentType = webhook.transaction?.payment_type ?? "";
+  const isTestMode = Number(webhook.transaction?.test_mode) === 1;
 
   const dateTime = webhook.transaction?.date ?? "";
   const [date = "", time = ""] = dateTime.split(" ");
 
   switch (eventType) {
 
-  case "PAYMENT": {
-    const paymentType = webhook.transaction?.payment_type ?? "";
-    const isTestMode = Number(webhook.transaction?.test_mode) === 1;
-  
-    const comments = [
-      t(locale, "payment.transactionId", { tid: eventTID }),
-      t(locale, "payment.paymentType", { type: paymentType }),
-      isTestMode ? t(locale, "payment.testMode") : "",
-    ];
-  
-    if (this.isBankTransferPayment(paymentType)) {
-      comments.push(
-        "",
-        t(locale, "payment.referenceText", {
-          amount: this.formatAmount(
-            webhook.transaction?.amount,
-            webhook.transaction?.currency,
-            locale,
-          ),
-        }),
-        t(locale, "payment.accountHolder", {
-          accountHolder:
-            webhook.transaction?.bank_details?.account_holder ?? "",
-        }),
-        t(locale, "payment.iban", {
-          iban: webhook.transaction?.bank_details?.iban ?? "",
-        }),
-        t(locale, "payment.bic", {
-          bic: webhook.transaction?.bank_details?.bic ?? "",
-        }),
-        t(locale, "payment.bankName", {
-          bankName:
-            webhook.transaction?.bank_details?.bank_name ?? "",
-        }),
-        t(locale, "payment.bankPlace", {
-          bankPlace:
-            webhook.transaction?.bank_details?.bank_place ?? "",
-        }),
-      );
+    case "PAYMENT": {
+      const comments = [
+        t(locale, "payment.transactionId", { tid: eventTID }),
+        t(locale, "payment.paymentType", { type: paymentType }),
+        isTestMode ? t(locale, "payment.testMode") : "",
+      ];
+
+      const bankDetails = webhook.transaction?.bank_details;
+
+      if (bankDetails) {
+        comments.push(
+          "",
+          t(locale, "payment.referenceText", {
+            amount: String(webhook.transaction?.amount ?? ""),
+          }),
+          t(locale, "payment.accountHolder", {
+            accountHolder: bankDetails.account_holder ?? "",
+          }),
+          t(locale, "payment.iban", {
+            iban: bankDetails.iban ?? "",
+          }),
+          t(locale, "payment.bic", {
+            bic: bankDetails.bic ?? "",
+          }),
+          t(locale, "payment.bankName", {
+            bankName: bankDetails.bank_name ?? "",
+          }),
+          t(locale, "payment.bankPlace", {
+            bankPlace: bankDetails.bank_place ?? "",
+          }),
+        );
+      }
+
+      return comments.filter(Boolean).join("\n");
     }
-  
-    return comments.filter(Boolean).join("\n");
-  }
-      
-    case "TRANSACTION_CAPTURE":
+
+    case "TRANSACTION_CAPTURE": {
       return t(locale, "callback.captureComment", {
         date,
         time,
       });
+    }
 
-    case "TRANSACTION_CANCEL":
+    case "TRANSACTION_CANCEL": {
       return t(locale, "callback.cancelComment", {
         date,
         time,
       });
-
-    case "TRANSACTION_REFUND": {
-      return t(locale, "callback.refundComment", {
-        eventTID: parentTID,
-        refundTID: eventTID,
-        refundedAmount: this.formatAmount(
-          webhook.transaction?.refund?.amount ?? 0,
-          webhook.transaction?.refund?.currency ??
-            webhook.transaction?.currency,
-          locale,
-        ),
-        currency:
-          webhook.transaction?.refund?.currency ??
-          webhook.transaction?.currency,
-      });
     }
+
+  case "TRANSACTION_REFUND": {
+    return t(locale, "callback.refundComment", {
+      eventTID: parentTID,
+      refundTID: eventTID,
+      refundedAmount: (
+        Number(webhook.transaction?.refund?.amount ?? 0) / 100
+      ).toFixed(2),
+      currency:
+        webhook.transaction?.refund?.currency ??
+        webhook.transaction?.currency,
+    });
+  }
 
     default:
       return "";
