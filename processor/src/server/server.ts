@@ -36,8 +36,10 @@ export const setupFastify = async () => {
 
   await server.register(fastifyRawBody, {
     field: "rawBody",
-    encoding: "utf8",
+    global: false,
     runFirst: true,
+    encoding: "utf8",
+    routes: ["/novalnletWebhook"],
   });
 
   await server.register(requestContextPlugin);
