@@ -253,6 +253,26 @@ export const paymentRoutes = async (
     "/novalnletWebhook",
     async (req, reply) => {
       try {
+        
+          log.info("[WEBHOOK][BODY DEBUG]", {
+            bodyType: typeof req.body,
+            isBuffer: Buffer.isBuffer(req.body),
+            hasRawBody: "rawBody" in req,
+            rawBodyType: typeof (req as any).rawBody,
+        
+            eventTid: req.body?.event?.tid,
+            eventTidType: typeof req.body?.event?.tid,
+            eventTidLength: String(req.body?.event?.tid ?? "").length,
+        
+            transactionTid: req.body?.transaction?.tid,
+            transactionTidType: typeof req.body?.transaction?.tid,
+            transactionTidLength: String(req.body?.transaction?.tid ?? "").length,
+        
+            parentTid: req.body?.event?.parent_tid,
+            parentTidType: typeof req.body?.event?.parent_tid,
+            parentTidLength: String(req.body?.event?.parent_tid ?? "").length,
+          });
+
         const parsedBody =
           typeof req.body === "string"
             ? JSONbig({ storeAsString: true }).parse(req.body)
