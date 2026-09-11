@@ -3658,7 +3658,6 @@ private buildTransactionComments(
 ): string {
 
   const eventType = String(webhook.event?.type ?? "");
-  const status = String(webhook.transaction?.status ?? "").toUpperCase();
 
   const eventTID = String(webhook.event?.tid ?? "");
   const parentTID = String(webhook.event?.parent_tid ?? "");
@@ -3668,49 +3667,50 @@ private buildTransactionComments(
 
   switch (eventType) {
 
-    case "PAYMENT":
-
-case "PAYMENT": {
-      const paymentType = webhook.transaction?.payment_type ?? "";
-      const isTestMode = Number(webhook.transaction?.test_mode) === 1;
-    
-      const comments = [
-        t(locale, "payment.transactionId", { tid: eventTID }),
-        t(locale, "payment.paymentType", { type: paymentType }),
-        isTestMode ? t(locale, "payment.testMode") : "",
-      ];
-    
-      if (this.isBankTransferPayment(paymentType)) {
-        comments.push(
-          "",
-          t(locale, "payment.referenceText", {
-            amount: this.formatAmount(
-              webhook.transaction?.amount,
-              webhook.transaction?.currency,
-              locale,
-            ),
-          }),
-          t(locale, "payment.accountHolder", {
-            accountHolder: webhook.transaction?.bank_details?.account_holder ?? "",
-          }),
-          t(locale, "payment.iban", {
-            iban: webhook.transaction?.bank_details?.iban ?? "",
-          }),
-          t(locale, "payment.bic", {
-            bic: webhook.transaction?.bank_details?.bic ?? "",
-          }),
-          t(locale, "payment.bankName", {
-            bankName: webhook.transaction?.bank_details?.bank_name ?? "",
-          }),
-          t(locale, "payment.bankPlace", {
-            bankPlace: webhook.transaction?.bank_details?.bank_place ?? "",
-          }),
-        );
-      }
-    
-      return comments.filter(Boolean).join("\n");
+  case "PAYMENT": {
+    const paymentType = webhook.transaction?.payment_type ?? "";
+    const isTestMode = Number(webhook.transaction?.test_mode) === 1;
+  
+    const comments = [
+      t(locale, "payment.transactionId", { tid: eventTID }),
+      t(locale, "payment.paymentType", { type: paymentType }),
+      isTestMode ? t(locale, "payment.testMode") : "",
+    ];
+  
+    if (this.isBankTransferPayment(paymentType)) {
+      comments.push(
+        "",
+        t(locale, "payment.referenceText", {
+          amount: this.formatAmount(
+            webhook.transaction?.amount,
+            webhook.transaction?.currency,
+            locale,
+          ),
+        }),
+        t(locale, "payment.accountHolder", {
+          accountHolder:
+            webhook.transaction?.bank_details?.account_holder ?? "",
+        }),
+        t(locale, "payment.iban", {
+          iban: webhook.transaction?.bank_details?.iban ?? "",
+        }),
+        t(locale, "payment.bic", {
+          bic: webhook.transaction?.bank_details?.bic ?? "",
+        }),
+        t(locale, "payment.bankName", {
+          bankName:
+            webhook.transaction?.bank_details?.bank_name ?? "",
+        }),
+        t(locale, "payment.bankPlace", {
+          bankPlace:
+            webhook.transaction?.bank_details?.bank_place ?? "",
+        }),
+      );
     }
-
+  
+    return comments.filter(Boolean).join("\n");
+  }
+      
     case "TRANSACTION_CAPTURE":
       return t(locale, "callback.captureComment", {
         date,
@@ -3737,6 +3737,7 @@ case "PAYMENT": {
       return "";
   }
 }
+  
    private async getOrderIdFromOrderNumber(
     orderNumber: string,
   ): Promise<string | undefined> {
