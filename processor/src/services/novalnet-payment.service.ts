@@ -1194,70 +1194,132 @@ public async failureResponse({ data }: { data: any }) {
     return null;
   }
 
-  private async syncPaymentToOrder(paymentId: string, pspReference: string) {
-    // 1. Wait for Order to exist
-    const order = await this.waitForOrderByPayment(paymentId);
-
-    if (!order) {
-      log.warn("Order not found yet – will sync on next webhook", {
+  private async syncPaymentToOrder(
+    paymentId: string,
+    pspReference: string,
+  ): Promise<void> {
+  
+    log.info("[ORDER_SYNC] START", {
+      paymentId,
+      pspReference,
+    });
+  
+    const rawPayment =
+      await this.ctPaymentService.getPayment({
+        id: paymentId,
+      } as any);
+  
+    const payment = (rawPayment as any)?.body ?? rawPayment;
+  
+    const transaction = [...(payment.transactions ?? [])]
+      .reverse()
+      .find((t: any) => t.interactionId === pspReference);
+  
+    if (!transaction) {
+      log.warn("[ORDER_SYNC] Matching transaction not found", {
         paymentId,
         pspReference,
       });
       return;
     }
-
-    // 2. Load Payment
-    const paymentRes = await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
+  
+    const orderId =
+      payment.custom?.fields?.orderId ??
+      payment.custom?.fields?.commercetoolsOrderId;
+  
+    if (!orderId) {
+      log.warn("[ORDER_SYNC] Order ID not found in Payment custom fields", {
+        paymentId,
+      });
+      return;
+    }
+  
+    const orderResponse = await projectApiRoot
+      .orders()
+      .withId({ ID: orderId })
       .get()
       .execute();
-
-    const payment = paymentRes.body;
-
-    const tx = payment.transactions?.find(
-      (t) => t.interactionId === pspReference,
-    );
-
-    if (!tx) {
-      log.warn("Transaction not found for PSP reference", {
-        paymentId,
-        pspReference,
-      });
-      return;
-    }
-
-    const comment = tx.custom?.fields?.transactionComments;
-    if (!comment) return;
-
-    // 3. Write into Order
-    await projectApiRoot
-      .orders()
-      .withId({ ID: order.id })
-      .post({
-        body: {
-          version: order.version,
-          actions: [
-            {
-              action: "setCustomType",
-              type: {
-                key: "order-payment-comments",
-                typeId: "type",
-              },
-            },
-            {
-              action: "setCustomField",
-              name: "paymentComments",
-              value: comment,
-            },
-          ],
+  
+    const order = orderResponse.body;
+  
+    const paymentComment =
+      transaction.custom?.fields?.transactionComments ?? "";
+  
+    log.info("[ORDER_SYNC] Order fetched", {
+      orderId: order.id,
+      version: order.version,
+    });
+  
+    // Check whether the custom Type exists
+    const orderCommentType = await projectApiRoot
+      .types()
+      .withKey({ key: "order-payment-comments" })
+      .get()
+      .execute()
+      .catch(() => null);
+  
+    const actions: OrderUpdateAction[] = [];
+  
+    if (orderCommentType) {
+  
+      actions.push({
+        action: "setCustomType",
+        type: {
+          key: "order-payment-comments",
+          typeId: "type",
         },
-      })
-      .execute();
-
-    log.info("Payment comments synced to Order", {
+      });
+  
+      actions.push({
+        action: "setCustomField",
+        name: "paymentComments",
+        value: paymentComment,
+      });
+  
+      log.info("[ORDER_SYNC] Custom type found", {
+        orderId: order.id,
+        typeKey: "order-payment-comments",
+      });
+  
+    } else {
+  
+      log.warn(
+        "[ORDER_SYNC] order-payment-comments type not found. Skipping custom field update.",
+        {
+          orderId: order.id,
+          typeKey: "order-payment-comments",
+        },
+      );
+    }
+  
+    if (actions.length > 0) {
+  
+      log.info("[ORDER_SYNC] Updating Order", {
+        orderId: order.id,
+        actions: actions.map(a => a.action),
+      });
+  
+      const updatedOrder = await projectApiRoot
+        .orders()
+        .withId({ ID: order.id })
+        .post({
+          body: {
+            version: order.version,
+            actions,
+          },
+        })
+        .execute();
+  
+      log.info("[ORDER_SYNC] Order updated", {
+        orderId: updatedOrder.body.id,
+        version: updatedOrder.body.version,
+      });
+    }
+  
+    log.info("[ORDER_SYNC] COMPLETED", {
       orderId: order.id,
       paymentId,
+      pspReference,
     });
   }
 
@@ -2065,33 +2127,276 @@ private async handleTransactionCancel(
   return transactionComments;
 }
   
-  public async handleTransactionRefund(webhook: any) {
-    const eventTID = webhook.event.tid;
-    const currency = webhook.transaction.currency;
-    const refundedAmount = webhook.transaction.refund.amount;
-    const refundTID = webhook.transaction.refund.tid ?? "";
-    const lang = webhook.custom.lang as SupportedLocale;
+private async handleTransactionRefund(
+  webhook: Record<string, any>,
+): Promise<string> {
 
-    const transactionComments = refundTID
-      ? this.getLocalizedComment("webhook.refundTIDComment", lang, {
-          eventTID,
-          refundedAmount,
-          currency,
-          refundTID,
-        })
-      : this.getLocalizedComment("webhook.refundComment", lang, {
-          eventTID,
-          refundedAmount,
-          currency,
-        });
+  const paymentId =
+    webhook.custom?.["ctpayment-id"] ??
+    webhook.custom?.inputval1;
 
-    return this.processWebhookTransaction({
-      webhook,
-      transactionComments,
-      setStatusInterfaceCode: true,
-      changeTransactionState: false,
+  const pspReference =
+    webhook.custom?.pspReference ??
+    webhook.custom?.inputval2;
+
+  const parentTid = String(
+    webhook.event?.parent_tid ?? "",
+  );
+
+  const refundTid = String(
+    webhook.transaction?.refund?.tid ?? "",
+  );
+
+  const refundAmount = Number(
+    webhook.transaction?.refund?.amount ?? 0,
+  );
+
+  const totalRefunded = Number(
+    webhook.transaction?.refunded_amount ?? 0,
+  );
+
+  const originalAmount = Number(
+    webhook.transaction?.amount ?? 0,
+  );
+
+  log.info("[REFUND] START", {
+    paymentId,
+    pspReference,
+    parentTid,
+    refundTid,
+    refundAmount,
+    totalRefunded,
+    originalAmount,
+    paymentType: webhook.transaction?.payment_type,
+  });
+
+  if (!paymentId || !pspReference || !refundTid) {
+    log.error("[REFUND] Missing mandatory data", {
+      paymentId,
+      pspReference,
+      refundTid,
     });
+    throw new Error("Missing refund reference");
   }
+
+  const payment = (
+    await projectApiRoot
+      .payments()
+      .withId({ ID: paymentId })
+      .get()
+      .execute()
+  ).body;
+
+  log.info("[REFUND] Payment fetched", {
+    paymentId,
+    transactionCount: payment.transactions?.length ?? 0,
+  });
+
+  const chargeTransaction =
+    payment.transactions?.find(
+      t =>
+        t.type === "Charge" &&
+        t.state === "Success",
+    );
+
+  if (!chargeTransaction) {
+    log.error("[REFUND] Charge validation failed", {
+      paymentId,
+    });
+    throw new Error(
+      "Successful Charge transaction not found",
+    );
+  }
+
+  log.info("[REFUND] Charge validated", {
+    paymentId,
+    chargeTransactionId: chargeTransaction.id,
+  });
+
+  const originalTid =
+    payment.interfaceId ??
+    "";
+
+  if (originalTid && originalTid !== parentTid) {
+    log.error("[REFUND] Parent TID mismatch", {
+      paymentId,
+      storedTid: originalTid,
+      webhookParentTid: parentTid,
+    });
+    throw new Error("Parent TID mismatch");
+  }
+
+  const existingRefund =
+    payment.transactions?.find(
+      t => t.interactionId === refundTid,
+    );
+
+  if (existingRefund) {
+
+    log.info("[REFUND] Already synchronized", {
+      paymentId,
+      refundTid,
+    });
+
+    return "Already synchronized";
+  }
+
+  const ctRefunded =
+    payment.transactions
+      ?.filter(
+        t =>
+          t.type === "Refund" &&
+          t.state === "Success",
+      )
+      .reduce(
+        (sum, t) =>
+          sum +
+          Number(
+            t.amount?.centAmount ?? 0,
+          ),
+        0,
+      ) ?? 0;
+
+  log.info("[REFUND] Refund reconciliation", {
+    paymentId,
+    ctRefunded,
+    refundAmount,
+    totalRefunded,
+  });
+
+  if (refundAmount <= 0) {
+    log.error("[REFUND] Invalid refund amount", {
+      refundAmount,
+    });
+    throw new Error("Invalid refund amount");
+  }
+
+  if (totalRefunded > originalAmount) {
+    log.error("[REFUND] Refunded amount exceeds payment amount", {
+      totalRefunded,
+      originalAmount,
+    });
+    throw new Error("Refund exceeds payment amount");
+  }
+
+  if (
+    ctRefunded + refundAmount !==
+    totalRefunded
+  ) {
+    log.error("[REFUND] Refund reconciliation mismatch", {
+      paymentId,
+      ctRefunded,
+      refundAmount,
+      totalRefunded,
+    });
+
+    throw new Error(
+      "Refund reconciliation mismatch",
+    );
+  }
+
+  const refundComments =
+    this.buildTransactionComments(webhook);
+
+  log.info("[REFUND] Creating Refund transaction", {
+    refundTid,
+    refundAmount,
+  });
+
+  const updated =
+    await projectApiRoot
+      .payments()
+      .withId({ ID: paymentId })
+      .post({
+        body: {
+          version: payment.version,
+          actions: [
+            {
+              action: "addTransaction",
+              transaction: {
+                type: "Refund",
+                amount: {
+                  centAmount: refundAmount,
+                  currencyCode:
+                    webhook.transaction.currency,
+                },
+                state: "Success",
+                interactionId: refundTid,
+                custom: {
+                  type: {
+                    key: "novalnet-custom-field",
+                    typeId: "type",
+                  },
+                  fields: {
+                    transactionComments:
+                      refundComments,
+                  },
+                },
+              },
+            },
+            {
+              action: "setStatusInterfaceCode",
+              interfaceCode: String(
+                webhook.transaction?.status_code ??
+                  "",
+              ),
+            },
+          ],
+        },
+      })
+      .execute();
+
+  log.info("[REFUND] Refund transaction added", {
+    paymentId,
+    version: updated.body.version,
+    refundTid,
+  });
+
+  await customObjectService.upsert(
+    "nn-private-data",
+    `${paymentId}-${pspReference}`,
+    {
+      tid: parentTid,
+      paymentMethod:
+        webhook.transaction?.payment_type,
+      status:
+        webhook.transaction?.status,
+      orderNo:
+        webhook.transaction?.order_no,
+      refundedAmount:
+        totalRefunded,
+      lastRefundTid:
+        refundTid,
+      lastRefundAmount:
+        refundAmount,
+      additionalInfo: {
+        comments: refundComments,
+      },
+    },
+  );
+
+  log.info("[REFUND] CustomObject updated", {
+    paymentId,
+    refundedAmount:
+      totalRefunded,
+  });
+
+  await this.syncPaymentToOrder(
+    paymentId,
+    pspReference,
+  );
+
+  log.info("[REFUND] Order sync completed", {
+    paymentId,
+  });
+
+  log.info("[REFUND] COMPLETED", {
+    paymentId,
+    refundTid,
+  });
+
+  return refundComments;
+}
 
 
   public async handleTransactionUpdate(webhook: any) {
