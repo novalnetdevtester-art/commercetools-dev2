@@ -1849,8 +1849,18 @@ private async handlePayment(
     targetState: mapped.state,
   });
 
+  const order = await this.getOrderByPaymentId(paymentId);
+  
+  const locale =
+    order?.locale ??
+    webhook.custom?.lang ??
+    "en";
+  
   const transactionComments =
-    this.buildTransactionComments(webhook);
+    this.buildTransactionComments(
+      webhook,
+      locale,
+    );
 
   const currentComments =
     tx.custom?.fields?.transactionComments ?? "";
@@ -1989,8 +1999,18 @@ private async handleTransactionCapture(
     return "Already synchronized";
   }
 
+  const order = await this.getOrderByPaymentId(paymentId);
+  
+  const locale =
+    order?.locale ??
+    webhook.custom?.lang ??
+    "en";
+  
   const transactionComments =
-    this.buildTransactionComments(webhook);
+    this.buildTransactionComments(
+      webhook,
+      locale,
+    );
 
   log.info("[CAPTURE] Processing capture", {
     paymentId,
@@ -2101,8 +2121,18 @@ private async handleTransactionCancel(
     return "Already synchronized";
   }
 
+  const order = await this.getOrderByPaymentId(paymentId);
+  
+  const locale =
+    order?.locale ??
+    webhook.custom?.lang ??
+    "en";
+  
   const transactionComments =
-    this.buildTransactionComments(webhook);
+    this.buildTransactionComments(
+      webhook,
+      locale,
+    );
 
   log.info("[CANCEL] Processing cancellation", {
     paymentId,
@@ -2295,8 +2325,18 @@ private async handleTransactionRefund(
     );
   }
 
-  const refundComments =
-    this.buildTransactionComments(webhook);
+  const order = await this.getOrderByPaymentId(paymentId);
+  
+  const locale =
+    order?.locale ??
+    webhook.custom?.lang ??
+    "en";
+  
+  const transactionComments =
+    this.buildTransactionComments(
+      webhook,
+      locale,
+    );
 
   log.info("[REFUND] Creating Refund transaction", {
     refundTid,
@@ -3601,49 +3641,98 @@ private async createPendingPaymentTransaction({
 
   private buildTransactionComments(
     webhook: Record<string, any>,
+    locale: string,
   ): string {
   
-    const tid = String(webhook.event?.tid ?? "");
+    const eventType = String(webhook.event?.type ?? "");
+    const status = String(webhook.transaction?.status ?? "").toUpperCase();
   
-    const paymentType =
-      webhook.transaction?.payment_type ?? "";
+    const tid = String(
+      webhook.event?.parent_tid ??
+      webhook.event?.tid ??
+      "",
+    );
   
-    const isTestMode =
-      webhook.transaction?.test_mode == 1;
+    const refundTid = String(
+      webhook.transaction?.refund?.tid ?? "",
+    );
   
-    const lang: SupportedLocale =
-      webhook.custom?.lang === "de"
-        ? "de"
-        : "en";
+    const amount = `${(
+      Number(webhook.transaction?.refund?.amount ?? 0) / 100
+    ).toFixed(2)} ${webhook.transaction?.currency ?? ""}`;
   
-    const supportedLocales: SupportedLocale[] = [
-      "en",
-      "de",
-    ];
+    const date = webhook.transaction?.date ?? "";
   
-    const comments =
-      supportedLocales.reduce(
-        (acc, locale) => {
+    switch (eventType) {
   
-          acc[locale] = [
-            t(locale, "payment.transactionId", { tid }),
-            t(locale, "payment.paymentType", {
-              type: paymentType,
-            }),
-            isTestMode
-              ? t(locale, "payment.testMode")
-              : "",
-          ]
-            .filter(Boolean)
-            .join("\n");
+      case "PAYMENT":
   
-          return acc;
+        switch (status) {
   
-        },
-        {} as Record<SupportedLocale, string>,
-      );
+          case "ON_HOLD":
+            return [
+              t(locale, "callback.payment.onHold", {
+                tid,
+                date,
+              }),
+            ].join("\n");
   
-    return comments[lang];
+          case "PENDING":
+            return [
+              t(locale, "callback.payment.pending", {
+                tid,
+                date,
+              }),
+            ].join("\n");
+  
+          case "CONFIRMED":
+            return [
+              t(locale, "callback.payment.confirmed", {
+                tid,
+                date,
+              }),
+            ].join("\n");
+  
+          case "FAILURE":
+            return [
+              t(locale, "callback.payment.failure", {
+                tid,
+              }),
+            ].join("\n");
+  
+          default:
+            return "";
+        }
+  
+      case "TRANSACTION_CAPTURE":
+        return [
+          t(locale, "callback.capture", {
+            tid,
+            date,
+          }),
+        ].join("\n");
+  
+      case "TRANSACTION_CANCEL":
+        return [
+          t(locale, "callback.cancel", {
+            tid,
+            date,
+          }),
+        ].join("\n");
+  
+      case "TRANSACTION_REFUND":
+        return [
+          t(locale, "callback.refund", {
+            tid,
+            refundTid,
+            amount,
+            date,
+          }),
+        ].join("\n");
+  
+      default:
+        return "";
+    }
   }
 
    private async getOrderIdFromOrderNumber(
