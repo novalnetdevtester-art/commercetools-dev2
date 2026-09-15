@@ -2274,18 +2274,35 @@ private async handleTransactionRefund(
     chargeTransactionId: chargeTransaction.id,
   });
 
-  const originalTid =
-    payment.interfaceId ??
-    "";
-
-  if (originalTid && originalTid !== parentTid) {
-    log.error("[REFUND] Parent TID mismatch", {
+  const webhookPspReference = String(webhook.custom?.pspReference ?? "");
+  
+  const originalTransaction = payment.transactions.find(
+    (tx) =>
+      tx.interactionId === webhookPspReference &&
+      (tx.type === "Authorization" || tx.type === "Charge"),
+  );
+  
+  if (!originalTransaction) {
+    log.error("[REFUND] Original transaction not found", {
       paymentId,
-      storedTid: originalTid,
-      webhookParentTid: parentTid,
+      webhookPspReference,
+      paymentInterfaceId: payment.interfaceId,
+      transactions: payment.transactions.map((tx) => ({
+        id: tx.id,
+        type: tx.type,
+        state: tx.state,
+        interactionId: tx.interactionId,
+      })),
     });
-    throw new Error("Parent TID mismatch");
+  
+    throw new Error("Original transaction not found");
   }
+  
+  log.info("[REFUND] Original transaction validated", {
+    paymentId,
+    transactionId: originalTransaction.id,
+    interactionId: originalTransaction.interactionId,
+  });
 
   const existingRefund =
     payment.transactions?.find(
