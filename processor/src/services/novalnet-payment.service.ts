@@ -1223,24 +1223,29 @@ public async failureResponse({ data }: { data: any }) {
       return;
     }
   
-    const orderId =
-      payment.custom?.fields?.orderId ??
-      payment.custom?.fields?.commercetoolsOrderId;
+  const orderRef = await this.waitForOrderByPayment(paymentId);
   
-    if (!orderId) {
-      log.warn("[ORDER_SYNC] Order ID not found in Payment custom fields", {
-        paymentId,
-      });
-      return;
-    }
+  if (!orderRef) {
+    log.warn("[ORDER_SYNC] No order linked to payment", {
+      paymentId,
+      pspReference,
+    });
+    return;
+  }
   
-    const orderResponse = await projectApiRoot
-      .orders()
-      .withId({ ID: orderId })
-      .get()
-      .execute();
+  const orderResponse = await projectApiRoot
+    .orders()
+    .withId({ ID: orderRef.id })
+    .get()
+    .execute();
   
-    const order = orderResponse.body;
+  const order = orderResponse.body;
+
+    log.info("[ORDER_SYNC] Order fetched", {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      version: order.version,
+    });
   
     const paymentComment =
       transaction.custom?.fields?.transactionComments ?? "";
