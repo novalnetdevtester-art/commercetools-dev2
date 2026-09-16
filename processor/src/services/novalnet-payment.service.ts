@@ -2540,19 +2540,12 @@ private async handleTransactionUpdate(
         ? "98"
         : String(webhook.transaction?.status_code ?? "");
 
-  const transactionState =
-    status === "CONFIRMED"
-      ? "Success"
-      : status === "ON_HOLD"
-        ? "Pending"
-        : "Initial";
-
   await this.updatePaymentTransaction({
     paymentId,
     pspReference,
     transactionComments,
     statusCode,
-    state: transactionState,
+    state: status === "CONFIRMED" ? "Success" : "Pending",
     appendComments: true,
     setCustomType: true,
     errorMessage: "Authorization transaction not found",
@@ -3685,7 +3678,6 @@ private buildTransactionComments(
   webhook: Record<string, any>,
   locale: SupportedLocale,
 ): string {
-
   const eventType = String(webhook.event?.type ?? "");
   const eventTID = String(webhook.event?.tid ?? "");
   const parentTID = String(webhook.event?.parent_tid ?? "");
@@ -3694,22 +3686,22 @@ private buildTransactionComments(
   const isTestMode = Number(webhook.transaction?.test_mode) === 1;
 
   const localeCode = locale === "de" ? "de-DE" : "en-GB";
-  
+
   let date = "";
   let time = "";
-  
+
   if (webhook.transaction?.date) {
     [date, time] = String(webhook.transaction.date).split(" ");
   } else {
     const now = new Date();
-  
+
     date = new Intl.DateTimeFormat(localeCode, {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
       timeZone: "Europe/Berlin",
     }).format(now);
-  
+
     time = new Intl.DateTimeFormat(localeCode, {
       hour: "2-digit",
       minute: "2-digit",
@@ -3718,6 +3710,7 @@ private buildTransactionComments(
       timeZone: "Europe/Berlin",
     }).format(now);
   }
+
   log.info("[CALLBACK] Date Debug", {
     eventType,
     transactionDate: webhook.transaction?.date,
@@ -3726,115 +3719,119 @@ private buildTransactionComments(
     refundDate: webhook.transaction?.refund?.date,
     eventTID,
   });
-  switch (eventType) {
 
+  switch (eventType) {
     case "PAYMENT": {
-      const comments = [
+      const comments: string[] = [
         t(locale, "payment.transactionId", { tid: eventTID }),
         t(locale, "payment.paymentType", { type: paymentType }),
-        isTestMode ? t(locale, "payment.testMode") : "",
       ];
+
+      if (isTestMode) {
+        comments.push(t(locale, "payment.testMode"));
+      }
 
       const bankDetails = webhook.transaction?.bank_details;
 
       if (bankDetails) {
+        comments.push("");
         comments.push(
-          "",
           t(locale, "payment.referenceText", {
             amount: String(webhook.transaction?.amount ?? ""),
           }),
+        );
+        comments.push(
           t(locale, "payment.accountHolder", {
-            accountHolder: bankDetails.account_holder ?? "",
+            accountHolder: String(bankDetails.account_holder ?? ""),
           }),
+        );
+        comments.push(
           t(locale, "payment.iban", {
-            iban: bankDetails.iban ?? "",
+            iban: String(bankDetails.iban ?? ""),
           }),
+        );
+        comments.push(
           t(locale, "payment.bic", {
-            bic: bankDetails.bic ?? "",
+            bic: String(bankDetails.bic ?? ""),
           }),
+        );
+        comments.push(
           t(locale, "payment.bankName", {
-            bankName: bankDetails.bank_name ?? "",
+            bankName: String(bankDetails.bank_name ?? ""),
           }),
+        );
+        comments.push(
           t(locale, "payment.bankPlace", {
-            bankPlace: bankDetails.bank_place ?? "",
+            bankPlace: String(bankDetails.bank_place ?? ""),
           }),
         );
       }
 
-      return comments.filter(Boolean).join("\n");
+      return comments.join("\n");
     }
 
-    case "TRANSACTION_CAPTURE": {
+    case "TRANSACTION_CAPTURE":
       return t(locale, "callback.captureComment", {
         date,
         time,
       });
-    }
 
-    case "TRANSACTION_CANCEL": {
+    case "TRANSACTION_CANCEL":
       return t(locale, "callback.cancelComment", {
         date,
         time,
       });
+
+    case "TRANSACTION_REFUND":
+      return t(locale, "callback.refundComment", {
+        eventTID: parentTID,
+        refundTID: eventTID,
+        refundedAmount: (
+          Number(webhook.transaction?.refund?.amount ?? 0) / 100
+        ).toFixed(2),
+        currency:
+          webhook.transaction?.refund?.currency ??
+          webhook.transaction?.currency,
+      });
+
+    case "TRANSACTION_UPDATE": {
+      const updateType = String(
+        webhook.transaction?.update_type ?? "",
+      ).toUpperCase();
+
+      const formattedAmount = (
+        Number(webhook.transaction?.amount ?? 0) / 100
+      ).toFixed(2);
+
+      switch (updateType) {
+        case "AMOUNT":
+          return t(locale, "callback.amountUpdateComment", {
+            eventTID,
+            amount: formattedAmount,
+            currency: webhook.transaction?.currency,
+          });
+
+        case "DUE_DATE":
+        case "AMOUNT_DUE_DATE":
+          return t(locale, "callback.dueDateUpdateComment", {
+            eventTID,
+            amount: formattedAmount,
+            currency: webhook.transaction?.currency,
+            dueDate: String(webhook.transaction?.due_date ?? ""),
+          });
+
+        case "STATUS":
+          return t(locale, "callback.onholdToComplete", {
+            eventTID,
+            date,
+            time,
+          });
+
+        default:
+          return "";
+      }
     }
 
-  case "TRANSACTION_REFUND": {
-    return t(locale, "callback.refundComment", {
-      eventTID: parentTID,
-      refundTID: eventTID,
-      refundedAmount: (
-        Number(webhook.transaction?.refund?.amount ?? 0) / 100
-      ).toFixed(2),
-      currency:
-        webhook.transaction?.refund?.currency ??
-        webhook.transaction?.currency,
-    });
-    }
-  case "TRANSACTION_UPDATE": {
-    const updateType = String(
-      webhook.transaction?.update_type ?? "",
-    ).toUpperCase();
-  
-    const formattedAmount = (
-      Number(webhook.transaction?.amount ?? 0) / 100
-    ).toFixed(2);
-  
-    if (updateType === "AMOUNT") {
-      return t(locale, "callback.amountUpdateComment", {
-        eventTID,
-        amount: formattedAmount,
-        currency: webhook.transaction?.currency,
-      });
-    }
-  
-    if (updateType === "DUE_DATE") {
-      return t(locale, "callback.dueDateUpdateComment", {
-        eventTID,
-        amount: formattedAmount,
-        currency: webhook.transaction?.currency,
-        dueDate: webhook.transaction?.due_date,
-      });
-    }
-  
-    if (updateType === "AMOUNT_DUE_DATE") {
-      return t(locale, "callback.dueDateUpdateComment", {
-        eventTID,
-        amount: formattedAmount,
-        currency: webhook.transaction?.currency,
-        dueDate: webhook.transaction?.due_date,
-      });
-    }
-  
-    if (updateType === "STATUS") {
-      return t(locale, "callback.onholdToComplete", {
-        eventTID,
-        date,
-        time,
-      });
-    }
-  
-    return "";
-  }
     default:
       return "";
   }
