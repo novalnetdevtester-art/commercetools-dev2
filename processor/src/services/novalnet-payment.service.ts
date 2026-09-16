@@ -3906,14 +3906,14 @@ private buildTransactionComments(
       webhook.transaction?.update_type ?? "",
     ).toUpperCase();
   
+    const formattedAmount = (
+      Number(webhook.transaction?.amount ?? 0) / 100
+    ).toFixed(2);
+  
     if (updateType === "AMOUNT") {
       return t(locale, "callback.amountUpdateComment", {
         eventTID,
-        amount: this.formatAmount(
-          webhook.transaction?.amount,
-          webhook.transaction?.currency,
-          locale,
-        ),
+        amount: formattedAmount,
         currency: webhook.transaction?.currency,
       });
     }
@@ -3921,11 +3921,7 @@ private buildTransactionComments(
     if (updateType === "DUE_DATE") {
       return t(locale, "callback.dueDateUpdateComment", {
         eventTID,
-        amount: this.formatAmount(
-          webhook.transaction?.amount,
-          webhook.transaction?.currency,
-          locale,
-        ),
+        amount: formattedAmount,
         currency: webhook.transaction?.currency,
         dueDate: webhook.transaction?.due_date,
       });
@@ -3934,11 +3930,7 @@ private buildTransactionComments(
     if (updateType === "AMOUNT_DUE_DATE") {
       return t(locale, "callback.dueDateUpdateComment", {
         eventTID,
-        amount: this.formatAmount(
-          webhook.transaction?.amount,
-          webhook.transaction?.currency,
-          locale,
-        ),
+        amount: formattedAmount,
         currency: webhook.transaction?.currency,
         dueDate: webhook.transaction?.due_date,
       });
