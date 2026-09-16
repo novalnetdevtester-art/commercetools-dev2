@@ -2498,92 +2498,194 @@ private async handleTransactionRefund(
 }
 
 
-  public async handleTransactionUpdate(webhook: any) {
-    const eventTID = webhook.event.tid;
-    const amount = String(webhook.transaction.amount / 100);
-    const currency = webhook.transaction.currency;
-    const dueDate = webhook.transaction.due_date;
-    const { date, time } = this.getFormattedDateTime();
-    const lang = webhook.custom.lang;
-
-    const amountUpdateComment = await this.localcomments(
-      "webhook.amountUpdateComment",
-      { eventTID: eventTID, amount: amount, currency: currency },
-    );
-    const dueDateUpdateComment = await this.localcomments(
-      "webhook.dueDateUpdateComment",
-      {
-        eventTID: eventTID,
-        amount: amount,
-        currency: currency,
-        dueDate: dueDate,
-      },
-    );
-
-    const orderDetails = await this.getOrderDetails(webhook);
-    let transactionComments = "";
-    if (
-      ["DUE_DATE", "AMOUNT", "AMOUNT_DUE_DATE"].includes(
-        webhook.transaction.update_type,
-      )
-    ) {
-      transactionComments =
-        lang == "en" ? amountUpdateComment.en : amountUpdateComment.de;
-      if (webhook.transaction.due_date) {
-        const dueDate = webhook.transaction.due_date;
-        transactionComments =
-          lang == "en" ? dueDateUpdateComment.en : dueDateUpdateComment.de;
-      }
+  private async handleTransactionUpdate(
+    webhook: Record<string, any>,
+  ): Promise<void> {
+    const parsedData = webhook.custom;
+    const paymentId = parsedData?.["ctpayment-id"];
+    const pspReference = parsedData?.pspReference;
+    const lang = parsedData?.lang as SupportedLocale;
+    const locale = lang === "en" ? "en" : "de";
+  
+    if (!paymentId || !pspReference) {
+      throw new Error("Missing ctpayment-id or pspReference");
     }
-
-    const pendingToComplete = await this.localcomments(
-      "webhook.pendingToComplete",
-      { eventTID: eventTID, date: date, time: time },
-    );
-    const onholdToComplete = await this.localcomments(
-      "webhook.onholdToComplete",
-      { eventTID: eventTID, date: date, time: time },
-    );
-    const confirmComments = await this.localcomments("webhook.confirmComment", {
-      date,
-      time,
+  
+    const updateType = String(
+      webhook.transaction?.update_type ?? "",
+    ).toUpperCase();
+  
+    const status = String(
+      webhook.transaction?.status ?? "",
+    ).toUpperCase();
+  
+    const amount = Number(webhook.transaction?.amount ?? 0);
+    const dueDate = webhook.transaction?.due_date;
+  
+    log.info("[TRANSACTION_UPDATE] Processing", {
+      paymentId,
+      pspReference,
+      updateType,
+      status,
+      amount,
+      dueDate,
     });
-    const cancelComments = await this.localcomments("webhook.cancelComment", {
-      date,
-      time,
-    });
-
-    if (
-      orderDetails.status != webhook.transaction.status &&
-      ["PENDING", "ON_HOLD"].includes(orderDetails.status)
-    ) {
-      if (webhook.transaction.status === "CONFIRMED") {
-        transactionComments =
-          lang == "en" ? pendingToComplete.en : pendingToComplete.de;
-      } else if (webhook.transaction.status === "ON_HOLD") {
-        transactionComments =
-          lang == "en" ? onholdToComplete.en : onholdToComplete.de;
-      } else {
-        transactionComments =
-          lang == "en" ? cancelComments.en : cancelComments.de;
-      }
-    } else if (orderDetails.status === "ON_HOLD") {
-      if (webhook.transaction.status === "CONFIRMED") {
-        transactionComments =
-          lang == "en" ? confirmComments.en : confirmComments.de;
-      } else {
-        transactionComments =
-          lang == "en" ? cancelComments.en : cancelComments.de;
-      }
+  
+    const projectRoot =
+      createApiRootByProjectKeyClientCredentialsFlow(
+        this.ctAuthService.getClient(),
+        this.ctAuthService.getProjectKey(),
+      );
+  
+    const payment = (
+      await projectRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .get()
+        .execute()
+    ).body;
+  
+    const authorization = payment.transactions.find(
+      (tx) =>
+        tx.type === "Authorization" &&
+        tx.interactionId === pspReference,
+    );
+  
+    if (!authorization) {
+      throw new Error("Authorization transaction not found");
     }
-
-    await this.processWebhookTransaction({
+  
+    const hasCharge = payment.transactions.some(
+      (tx) => tx.type === "Charge",
+    );
+  
+    let paymentState = payment.paymentStatus?.state;
+    let interfaceCode = payment.paymentStatus?.interfaceCode ?? "98";
+    let transactionState = authorization.state;
+  
+    switch (updateType) {
+      case "STATUS":
+        if (status === "CONFIRMED") {
+          paymentState = "Paid";
+          interfaceCode = "100";
+          transactionState = "Success";
+        } else if (status === "ON_HOLD") {
+          paymentState = "Pending";
+          interfaceCode = "98";
+        }
+        break;
+  
+      case "AMOUNT":
+      case "AMOUNT_DUE_DATE":
+        if (hasCharge) {
+          log.info(
+            "[TRANSACTION_UPDATE] Charge transactions exist. Skipping authorization amount update.",
+            { paymentId },
+          );
+        }
+        break;
+    }
+  
+    const transactionComments = this.buildTransactionComments(
       webhook,
+      locale,
+    );
+  
+    await this.updatePaymentTransaction({
+      paymentId,
+      pspReference,
       transactionComments,
-      state: this.getTransactionStatus(webhook?.transaction?.status).state,
-      setStatusInterfaceCode: true,
+      statusCode: interfaceCode,
+      state: transactionState,
+      appendComments: true,
+      setCustomType: true,
+      errorMessage: "Authorization transaction not found",
     });
-    return transactionComments;
+  
+    if (
+      (updateType === "AMOUNT" || updateType === "AMOUNT_DUE_DATE") &&
+      !hasCharge &&
+      amount !== authorization.amount.centAmount
+    ) {
+      const latest = (
+        await projectRoot
+          .payments()
+          .withId({ ID: paymentId })
+          .get()
+          .execute()
+      ).body;
+  
+      await projectRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: latest.version,
+            actions: [
+              {
+                action: "changeTransactionAmount",
+                transactionId: authorization.id,
+                amount: {
+                  centAmount: amount,
+                  currencyCode: authorization.amount.currencyCode,
+                },
+              },
+              {
+                action: "changeAmountPlanned",
+                amount: {
+                  centAmount: amount,
+                  currencyCode: authorization.amount.currencyCode,
+                },
+              },
+            ],
+          },
+        })
+        .execute();
+    }
+  
+    if (
+      dueDate &&
+      (updateType === "DUE_DATE" ||
+        updateType === "AMOUNT_DUE_DATE")
+    ) {
+      const latest = (
+        await projectRoot
+          .payments()
+          .withId({ ID: paymentId })
+          .get()
+          .execute()
+      ).body;
+  
+      await projectRoot
+        .payments()
+        .withId({ ID: paymentId })
+        .post({
+          body: {
+            version: latest.version,
+            actions: [
+              {
+                action: "setCustomField",
+                name: "novalnetDueDate",
+                value: dueDate,
+              },
+            ],
+          },
+        })
+        .execute();
+    }
+  
+    await this.syncPaymentToOrder(
+      paymentId,
+      pspReference,
+      transactionComments,
+    );
+  
+    log.info("[TRANSACTION_UPDATE] Completed", {
+      paymentId,
+      updateType,
+      paymentState,
+      interfaceCode,
+    });
   }
 
   public async handleCredit(webhook: any) {
@@ -3805,8 +3907,60 @@ private buildTransactionComments(
         webhook.transaction?.refund?.currency ??
         webhook.transaction?.currency,
     });
+    }
+  case "TRANSACTION_UPDATE": {
+    const updateType = String(
+      webhook.transaction?.update_type ?? "",
+    ).toUpperCase();
+  
+    if (updateType === "AMOUNT") {
+      return t(locale, "callback.amountUpdateComment", {
+        eventTID,
+        amount: this.formatAmount(
+          webhook.transaction?.amount,
+          webhook.transaction?.currency,
+          locale,
+        ),
+        currency: webhook.transaction?.currency,
+      });
+    }
+  
+    if (updateType === "DUE_DATE") {
+      return t(locale, "callback.dueDateUpdateComment", {
+        eventTID,
+        amount: this.formatAmount(
+          webhook.transaction?.amount,
+          webhook.transaction?.currency,
+          locale,
+        ),
+        currency: webhook.transaction?.currency,
+        dueDate: webhook.transaction?.due_date,
+      });
+    }
+  
+    if (updateType === "AMOUNT_DUE_DATE") {
+      return t(locale, "callback.dueDateUpdateComment", {
+        eventTID,
+        amount: this.formatAmount(
+          webhook.transaction?.amount,
+          webhook.transaction?.currency,
+          locale,
+        ),
+        currency: webhook.transaction?.currency,
+        dueDate: webhook.transaction?.due_date,
+      });
+    }
+  
+    if (updateType === "STATUS") {
+      return t(locale, "callback.onholdToComplete", {
+        eventTID,
+        date,
+        time,
+      });
+    }
+  
+    return "";
   }
-
     default:
       return "";
   }
