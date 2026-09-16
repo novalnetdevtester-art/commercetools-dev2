@@ -2519,165 +2519,54 @@ private async handleTransactionUpdate(
     webhook.transaction?.status ?? "",
   ).toUpperCase();
 
-  const amount = Number(webhook.transaction?.amount ?? 0);
-  const dueDate = webhook.transaction?.due_date;
+  const transactionComments = this.buildTransactionComments(
+    webhook,
+    locale,
+  );
 
   log.info("[TRANSACTION_UPDATE] Processing", {
     paymentId,
     pspReference,
     updateType,
     status,
-    amount,
-    dueDate,
+    amount: webhook.transaction?.amount,
+    dueDate: webhook.transaction?.due_date,
   });
 
-  // Use the same API root pattern already used in the service
-  const projectApiRoot = createApiRoot(
-    this.ctCartService.getClient(),
-    this.ctCartService.getProjectKey(),
-  );
+  const statusCode =
+    status === "CONFIRMED"
+      ? "100"
+      : status === "ON_HOLD"
+        ? "98"
+        : String(webhook.transaction?.status_code ?? "");
 
-  const payment = (
-    await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .get()
-      .execute()
-  ).body;
-
-  const authorization = payment.transactions.find(
-    (tx: any) =>
-      tx.type === "Authorization" &&
-      tx.interactionId === pspReference,
-  );
-
-  if (!authorization) {
-    throw new Error("Authorization transaction not found");
-  }
-
-  const hasCharge = payment.transactions.some(
-    (tx: any) => tx.type === "Charge",
-  );
-
-  let interfaceCode = payment.paymentStatus?.interfaceCode ?? "98";
-  let transactionState = authorization.state;
-
-  // Only STATUS updates should change payment state.
-  if (updateType === "STATUS") {
-    log.info("[TRANSACTION_UPDATE][STATUS]", {
-      previousInterfaceCode: payment.paymentStatus?.interfaceCode,
-      newStatus: status,
-    });
-
-    if (status === "CONFIRMED") {
-      interfaceCode = "100";
-      transactionState = "Success";
-    } else if (status === "ON_HOLD") {
-      interfaceCode = "98";
-    }
-  }
-
-  const transactionComments = this.buildTransactionComments(
-    webhook,
-    locale,
-  );
+  const transactionState =
+    status === "CONFIRMED"
+      ? "Success"
+      : status === "ON_HOLD"
+        ? "Pending"
+        : "Initial";
 
   await this.updatePaymentTransaction({
     paymentId,
     pspReference,
     transactionComments,
-    statusCode: interfaceCode,
+    statusCode,
     state: transactionState,
     appendComments: true,
     setCustomType: true,
     errorMessage: "Authorization transaction not found",
   });
 
-  // Handle AMOUNT and AMOUNT_DUE_DATE
-  if (
-    (updateType === "AMOUNT" ||
-      updateType === "AMOUNT_DUE_DATE") &&
-    !hasCharge &&
-    amount !== authorization.amount.centAmount
-  ) {
-    const latest = (
-      await projectApiRoot
-        .payments()
-        .withId({ ID: paymentId })
-        .get()
-        .execute()
-    ).body;
-
-    await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .post({
-        body: {
-          version: latest.version,
-          actions: [
-            {
-              action: "changeTransactionAmount",
-              transactionId: authorization.id,
-              amount: {
-                centAmount: amount,
-                currencyCode: authorization.amount.currencyCode,
-              },
-            },
-            {
-              action: "changeAmountPlanned",
-              amount: {
-                centAmount: amount,
-                currencyCode: authorization.amount.currencyCode,
-              },
-            },
-          ],
-        },
-      })
-      .execute();
-  }
-
-  // Handle DUE_DATE and AMOUNT_DUE_DATE
-  if (
-    dueDate &&
-    (updateType === "DUE_DATE" ||
-      updateType === "AMOUNT_DUE_DATE")
-  ) {
-    const latest = (
-      await projectApiRoot
-        .payments()
-        .withId({ ID: paymentId })
-        .get()
-        .execute()
-    ).body;
-
-    await projectApiRoot
-      .payments()
-      .withId({ ID: paymentId })
-      .post({
-        body: {
-          version: latest.version,
-          actions: [
-            {
-              action: "setCustomField",
-              name: "novalnetDueDate",
-              value: dueDate,
-            },
-          ],
-        },
-      })
-      .execute();
-  }
-
   await this.syncPaymentToOrder(
     paymentId,
-    pspReference,
     transactionComments,
   );
 
   log.info("[TRANSACTION_UPDATE] Completed", {
     paymentId,
     updateType,
-    interfaceCode,
+    statusCode,
   });
 }
 
