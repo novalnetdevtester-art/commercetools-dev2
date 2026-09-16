@@ -2500,7 +2500,7 @@ private async handleTransactionRefund(
 
 private async handleTransactionUpdate(
   webhook: Record<string, any>,
-): Promise<void> {
+): Promise<string> {
   const parsedData = webhook.custom;
   const paymentId = parsedData?.["ctpayment-id"];
   const pspReference = parsedData?.pspReference;
@@ -2561,33 +2561,9 @@ private async handleTransactionUpdate(
     updateType,
     statusCode,
   });
+
+  return transactionComments;
 }
-
-  public async handleCredit(webhook: any) {
-    const eventTID = webhook.event.tid;
-    const transactionID = webhook.transaction.tid;
-    const parentTID = webhook.event.parent_tid ?? eventTID;
-    const amount = String(webhook.transaction.amount / 100);
-    const currency = webhook.transaction.currency;
-    const { date, time } = this.getFormattedDateTime();
-    const lang = webhook.custom.lang as SupportedLocale;
-
-    const transactionComments = this.getLocalizedComment("webhook.creditComment", lang, {
-      parentTID,
-      amount,
-      currency,
-      date,
-      time,
-      transactionID,
-    });
-
-    return this.processWebhookTransaction({
-      webhook,
-      transactionComments,
-      state: this.getTransactionStatus(webhook?.transaction?.status).state,
-      setStatusInterfaceCode: true,
-    });
-  }
 
   public async handleChargeback(webhook: any) {
     const eventTID = webhook.event.tid;
