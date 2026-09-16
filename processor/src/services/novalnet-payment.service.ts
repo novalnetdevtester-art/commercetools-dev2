@@ -3709,8 +3709,31 @@ private buildTransactionComments(
   const paymentType = webhook.transaction?.payment_type ?? "";
   const isTestMode = Number(webhook.transaction?.test_mode) === 1;
 
-  const dateTime = webhook.transaction?.date ?? "";
-  const [date = "", time = ""] = dateTime.split(" ");
+  const localeCode = locale === "de" ? "de-DE" : "en-GB";
+  
+  let date = "";
+  let time = "";
+  
+  if (webhook.transaction?.date) {
+    [date, time] = String(webhook.transaction.date).split(" ");
+  } else {
+    const now = new Date();
+  
+    date = new Intl.DateTimeFormat(localeCode, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "Europe/Berlin",
+    }).format(now);
+  
+    time = new Intl.DateTimeFormat(localeCode, {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+      timeZone: "Europe/Berlin",
+    }).format(now);
+  }
   log.info("[CALLBACK] Date Debug", {
     eventType,
     transactionDate: webhook.transaction?.date,
