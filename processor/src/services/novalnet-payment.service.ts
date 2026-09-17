@@ -612,8 +612,8 @@ public async failureResponse({ data }: { data: any }) {
     let birthDate: string | undefined;
     
     const rawBirthDate =
-      request.data.paymentMethod?.birthDate ??
-      request.data.paymentMethod?.birthdate;
+      request.data.paymentMethod?.birthdate ??
+      "";
     
     
     if (typeof rawBirthDate === "string" && rawBirthDate.trim()) {
