@@ -2446,7 +2446,6 @@ private async handleTransactionUpdate(
         lastCreditAmount: creditAmount,
       },
     },
-    customObject?.version,
   );
 
   log.info("[CREDIT] Credit state saved", {
