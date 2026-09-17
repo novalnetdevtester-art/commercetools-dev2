@@ -364,7 +364,7 @@ export class GuaranteedSepa extends BaseComponent {
           ) as HTMLInputElement
         )?.value.trim();
 
-      const birthDate =
+      const birthdate =
         (
           document.getElementById(
             "nn_guaranteesepa_dob"
@@ -377,7 +377,7 @@ export class GuaranteedSepa extends BaseComponent {
           accountHolder,
           iban,
           bic,
-          birthDate,
+          birthdate,
         }
       );
 
@@ -399,7 +399,7 @@ export class GuaranteedSepa extends BaseComponent {
         return;
       }
 
-      if (!birthDate) {
+      if (!birthdate) {
 
         this.onError(
           "Please enter Date of Birth."
@@ -410,13 +410,13 @@ export class GuaranteedSepa extends BaseComponent {
 
       const validDob =
         window.NovalnetUtility?.validateDateFormat(
-          birthDate
+          birthdate
         );
 
       console.log(
         "[Guaranteed SEPA] DOB final validation",
         {
-          birthDate,
+          birthdate,
           validDob,
         }
       );
@@ -443,7 +443,7 @@ export class GuaranteedSepa extends BaseComponent {
 
           iban,
           bic,
-          birthDate,
+          birthdate,
         },
 
         paymentOutcome:
