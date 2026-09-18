@@ -1232,7 +1232,169 @@ private getTransactionStatus(status?: string): {
       };
   }
 }
-
+		
+	private mapNovalnetOrderStates({
+	  status,
+	  eventType,
+	  isPartialCredit = false,
+	  isPartialRefund = false,
+	}: {
+	  status?: string;
+	  eventType?: string;
+	  isPartialCredit?: boolean;
+	  isPartialRefund?: boolean;
+	}): {
+	  orderState: "Open" | "Confirmed" | "Cancelled";
+	  paymentState:
+	    | "Pending"
+	    | "Paid"
+	    | "BalanceDue"
+	    | "CreditOwed"
+	    | "Failed";
+	} {
+	
+	  const paymentStatus = String(status ?? "").toUpperCase();
+	  const event = String(eventType ?? "").toUpperCase();
+	
+	  switch (event) {
+	
+	    case "TRANSACTION_CAPTURE":
+	      return {
+	        orderState: "Confirmed",
+	        paymentState: "Paid",
+	      };
+	
+	    case "TRANSACTION_CANCEL":
+	    case "CHARGEBACK":
+	    case "RETURN_DEBIT":
+	    case "REVERSAL":
+	      return {
+	        orderState: "Cancelled",
+	        paymentState: "Failed",
+	      };
+	
+	    case "CREDIT":
+	      return isPartialCredit
+	        ? {
+	            orderState: "Open",
+	            paymentState: "BalanceDue",
+	          }
+	        : {
+	            orderState: "Confirmed",
+	            paymentState: "Paid",
+	          };
+	
+	    case "TRANSACTION_REFUND":
+	      return isPartialRefund
+	        ? {
+	            orderState: "Confirmed",
+	            paymentState: "CreditOwed",
+	          }
+	        : {
+	            orderState: "Confirmed",
+	            paymentState: "CreditOwed",
+	          };
+	
+	    case "TRANSACTION_UPDATE":
+	      return {
+	        orderState: "Confirmed",
+	        paymentState: "Paid",
+	      };
+	  }
+	
+	  switch (paymentStatus) {
+	
+	    case "CONFIRMED":
+	      return {
+	        orderState: "Confirmed",
+	        paymentState: "Paid",
+	      };
+	
+	    case "PENDING":
+	    case "ON_HOLD":
+	      return {
+	        orderState: "Open",
+	        paymentState: "Pending",
+	      };
+	
+	    case "FAILURE":
+	    case "CANCELLED":
+	      return {
+	        orderState: "Cancelled",
+	        paymentState: "Failed",
+	      };
+	
+	    default:
+	      return {
+	        orderState: "Open",
+	        paymentState: "Pending",
+	      };
+	  }
+	}
+	
+	private async updateOrderStates({
+	  paymentId,
+	  orderState,
+	  paymentState,
+	}: {
+	  paymentId: string;
+	  orderState: "Open" | "Confirmed" | "Cancelled";
+	  paymentState:
+	    | "Pending"
+	    | "Paid"
+	    | "BalanceDue"
+	    | "CreditOwed"
+	    | "Failed";
+	}): Promise<void> {
+	
+	  const order = await this.getOrderByPaymentId(paymentId);
+	
+	  if (!order) {
+	    log.warn("[ORDER_STATE] Order not found", { paymentId });
+	    return;
+	  }
+	
+	  const actions: any[] = [];
+	
+	  if (order.paymentState !== paymentState) {
+	    actions.push({
+	      action: "changePaymentState",
+	      paymentState,
+	    });
+	  }
+	
+	  if (
+	    order.orderState !== "Complete" &&
+	    order.orderState !== orderState
+	  ) {
+	    actions.push({
+	      action: "changeOrderState",
+	      orderState,
+	    });
+	  }
+	
+	  if (!actions.length) {
+	    return;
+	  }
+	
+	  await projectApiRoot
+	    .orders()
+	    .withId({ ID: order.id })
+	    .post({
+	      body: {
+	        version: order.version,
+	        actions,
+	      },
+	    })
+	    .execute();
+	
+	  log.info("[ORDER_STATE] Updated", {
+	    orderId: order.id,
+	    paymentId,
+	    orderState,
+	    paymentState,
+	  });
+	}
   private async callNovalnet<T = any>(url: string, payload: unknown): Promise<T> {
     const accessKey = String(getConfig()?.novalnetPrivateKey ?? "");
   
