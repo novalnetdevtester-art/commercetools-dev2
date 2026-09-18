@@ -1595,6 +1595,8 @@ private async processWebhookTransaction({
       break;
 
     case "CHARGEBACK":
+	case "RETURN_DEBIT":
+	case "REVERSAL":
       transactionComments = await this.handleChargeback(webhook);
       break;
 
@@ -2471,31 +2473,94 @@ private async handleTransactionUpdate(
   return transactionComments;
 }
 
-  public async handleChargeback(webhook: any) {
-    const eventTID = webhook.event.tid;
-    const transactionID = webhook.transaction.tid;
-    const parentTID = webhook.event.parent_tid ?? eventTID;
-    const amount = String(webhook.transaction.amount / 100);
-    const currency = webhook.transaction.currency;
-    const { date, time } = this.getFormattedDateTime();
-    const lang = webhook.custom.lang as SupportedLocale;
+public async handleChargeback(
+  webhook: Record<string, any>,
+): Promise<string> {
+  const paymentId =
+    webhook.custom?.["ctpayment-id"] ??
+    webhook.custom?.inputval1;
 
-    const transactionComments = this.getLocalizedComment("webhook.chargebackComment", lang, {
-      parentTID,
-      amount,
-      currency,
-      date,
-      time,
-      eventTID,
-    });
+  const pspReference =
+    webhook.custom?.pspReference ??
+    webhook.custom?.inputval2;
 
-    return this.processWebhookTransaction({
-      webhook,
-      transactionComments,
-      state: this.getTransactionStatus(webhook?.transaction?.status).state,
-      setStatusInterfaceCode: true,
-    });
+  if (!paymentId || !pspReference) {
+    throw new Error("Missing ctpayment-id or pspReference");
   }
+
+  const lang = webhook.custom?.lang as SupportedLocale;
+  const locale = lang === "en" ? "en" : "de";
+
+  const transactionComments = this.buildTransactionComments(
+    webhook,
+    locale,
+  );
+
+  log.info("[CHARGEBACK] Webhook received", {
+    paymentId,
+    pspReference,
+    eventType: webhook.event?.type,
+    eventTid: webhook.event?.tid,
+    parentTid: webhook.event?.parent_tid,
+    amount: webhook.transaction?.amount,
+    currency: webhook.transaction?.currency,
+    status: webhook.transaction?.status,
+  });
+
+  await this.processWebhookTransaction({
+    webhook,
+    transactionComments,
+    state: "Failure",
+  });
+
+  const container = "nn-private-data";
+  const key = `${paymentId}-${pspReference}`;
+
+  let customObject: any = null;
+
+  try {
+    const response = await projectApiRoot
+      .customObjects()
+      .withContainerAndKey({ container, key })
+      .get()
+      .execute();
+
+    customObject = response.body;
+  } catch {
+    customObject = null;
+  }
+
+  const existingComments =
+    customObject?.value?.additionalInfo?.comments ?? "";
+
+  const finalComments = existingComments
+    ? `${existingComments}\n\n---\n${transactionComments}`
+    : transactionComments;
+
+  await customObjectService.upsert(
+    container,
+    key,
+    {
+      ...(customObject?.value ?? {}),
+      status: "FAILURE",
+      additionalInfo: {
+        ...(customObject?.value?.additionalInfo ?? {}),
+        comments: finalComments,
+        lastChargebackTid: String(webhook.event?.tid ?? ""),
+        lastChargebackAmount: Number(
+          webhook.transaction?.amount ?? 0,
+        ),
+      },
+    },
+  );
+
+  log.info("[CHARGEBACK] Completed", {
+    paymentId,
+    pspReference,
+  });
+
+  return transactionComments;
+}
 
 
   public async handlePaymentReminder(webhook: any) {
