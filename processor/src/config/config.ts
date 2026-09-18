@@ -1,5 +1,5 @@
 export const config = {
-  // Required by Payment SDK
+
   projectKey: process.env.CTP_PROJECT_KEY!,
   clientId: process.env.CTP_CLIENT_ID!,
   clientSecret: process.env.CTP_CLIENT_SECRET!,
@@ -22,19 +22,18 @@ export const config = {
     "https://session.europe-west1.gcp.commercetools.com/",
   healthCheckTimeout: parseInt(process.env.HEALTH_CHECK_TIMEOUT || "5000"),
 
-  // Required by logger
+
   loggerLevel: process.env.LOGGER_LEVEL || "info",
 
-  // Update with specific payment providers config
+
   mockClientKey: process.env.MOCK_CLIENT_KEY,
   mockEnvironment: process.env.MOCK_ENVIRONMENT,
 
-  // Update with specific payment providers config
+
   novalnetPublicKey: process.env.NOVALNET_PUBLIC_KEY!,
   novalnetPrivateKey: process.env.NOVALNET_PRIVATE_KEY!,
   novalnetTariff: process.env.NOVALNET_TARIFF_KEY!,
   novalnetClientkey: process.env.NOVALNET_CLIENT_KEY!,
-  novalnetWebhookURL: process.env.NOVALNET_WEBHOOK_URL!,
   novalnetWebhookTestMode: process.env.NOVALNET_WEBHOOK_TEST_MODE!,
 
   merchanturl: process.env.MERCHANT_RETURN_URL || "",
@@ -110,7 +109,7 @@ export const config = {
     process.env.NOVALNET_GUARANTEED_SEPA_ALLOW_B2B_CUSTOMERS || "0",
   novalnet_GUARANTEED_SEPA_ForceNonGuarantee:
     process.env.NOVALNET_GUARANTEED_SEPA_FORCE_NON_GUARANTEED_PAYMENT || "0",
-  // Payment Providers config
+
   returnurl: process.env.RETURN_URL,
   merchantReturnUrl: process.env.MERCHANT_RETURN_URL || "",
 
@@ -119,7 +118,7 @@ export const config = {
   // enableStoreDetails: process.env.ENABLE_STORE_DETAILS === 'true' ? true : false,
   // sellerReturnUrl: process.env.SELLER_RETURN_URL || ''
 };
-// Config loaded successfully
+
 export const getConfig = () => {
   return config;
 };
