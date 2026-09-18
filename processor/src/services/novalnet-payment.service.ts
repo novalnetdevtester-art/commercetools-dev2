@@ -2513,7 +2513,6 @@ private async handleTransactionUpdate(
 	  log.info("[CHARGEBACK] Webhook received", {
 	    paymentId,
 	    pspReference,
-	    chargeReference,
 	    eventType: webhook.event?.type,
 	    eventTid: webhook.event?.tid,
 	    parentTid: webhook.event?.parent_tid,
@@ -2535,7 +2534,7 @@ private async handleTransactionUpdate(
 		errorMessage: "Charge transaction not found",
 	  });
 
-	  await this.syncPaymentToOrder(paymentId, chargeReference);
+	  await this.syncPaymentToOrder(paymentId, pspReference);
 	
 	  const container = "nn-private-data";
 	  const key = `${paymentId}-${pspReference}`;
@@ -2584,7 +2583,6 @@ private async handleTransactionUpdate(
 	  log.info("[CHARGEBACK] Completed", {
 	    paymentId,
 	    pspReference,
-	    chargeReference,
 	  });
 	
 	  return transactionComments;
