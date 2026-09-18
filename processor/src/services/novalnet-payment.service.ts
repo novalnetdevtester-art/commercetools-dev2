@@ -2434,7 +2434,14 @@ private async handleTransactionUpdate(
       changeTransactionState: false,
     });
   }
+	  
+  const existingComments =
+    customObject?.value?.additionalInfo?.comments ?? "";
 
+  const finalComments = existingComments
+    ? `${existingComments}\n\n---\n${transactionComments}`
+    : transactionComments;
+	  
   await customObjectService.upsert(
     container,
     key,
@@ -2443,7 +2450,7 @@ private async handleTransactionUpdate(
       creditedAmount,
       additionalInfo: {
         ...(customObject?.value?.additionalInfo ?? {}),
-        comments: transactionComments,
+        comments: finalComments,
         lastCreditTid: eventTID,
         lastCreditAmount: creditAmount,
       },
@@ -2473,95 +2480,111 @@ private async handleTransactionUpdate(
   return transactionComments;
 }
 
-public async handleChargeback(
-  webhook: Record<string, any>,
-): Promise<string> {
-  const paymentId =
-    webhook.custom?.["ctpayment-id"] ??
-    webhook.custom?.inputval1;
-
-  const pspReference =
-    webhook.custom?.pspReference ??
-    webhook.custom?.inputval2;
-
-  if (!paymentId || !pspReference) {
-    throw new Error("Missing ctpayment-id or pspReference");
-  }
-
-  const lang = webhook.custom?.lang as SupportedLocale;
-  const locale = lang === "en" ? "en" : "de";
-
-  const transactionComments = this.buildTransactionComments(
-    webhook,
-    locale,
-  );
-
-  log.info("[CHARGEBACK] Webhook received", {
-    paymentId,
-    pspReference,
-    eventType: webhook.event?.type,
-    eventTid: webhook.event?.tid,
-    parentTid: webhook.event?.parent_tid,
-    amount: webhook.transaction?.amount,
-    currency: webhook.transaction?.currency,
-    status: webhook.transaction?.status,
-  });
-
-  await this.processWebhookTransaction({
-    webhook,
-    transactionComments,
-    state: "Failure",
-  });
-
-  const container = "nn-private-data";
-  const key = `${paymentId}-${pspReference}`;
-
-  let customObject: any = null;
-
-  try {
-    const response = await projectApiRoot
-      .customObjects()
-      .withContainerAndKey({ container, key })
-      .get()
-      .execute();
-
-    customObject = response.body;
-  } catch {
-    customObject = null;
-  }
-
-  const existingComments =
-    customObject?.value?.additionalInfo?.comments ?? "";
-
-  const finalComments = existingComments
-    ? `${existingComments}\n\n---\n${transactionComments}`
-    : transactionComments;
-
-  await customObjectService.upsert(
-    container,
-    key,
-    {
-      ...(customObject?.value ?? {}),
-      status: "FAILURE",
-      additionalInfo: {
-        ...(customObject?.value?.additionalInfo ?? {}),
-        comments: finalComments,
-        lastChargebackTid: String(webhook.event?.tid ?? ""),
-        lastChargebackAmount: Number(
-          webhook.transaction?.amount ?? 0,
-        ),
-      },
-    },
-  );
-
-  log.info("[CHARGEBACK] Completed", {
-    paymentId,
-    pspReference,
-  });
-
-  return transactionComments;
-}
-
+	public async handleChargeback(
+	  webhook: Record<string, any>,
+	): Promise<string> {
+	  const paymentId =
+	    webhook.custom?.["ctpayment-id"] ??
+	    webhook.custom?.inputval1;
+	
+	  const pspReference =
+	    webhook.custom?.pspReference ??
+	    webhook.custom?.inputval2;
+	
+	  if (!paymentId || !pspReference) {
+	    throw new Error("Missing ctpayment-id or pspReference");
+	  }
+	
+	  const lang = webhook.custom?.lang as SupportedLocale;
+	  const locale = lang === "en" ? "en" : "de";
+	
+	  const transactionComments = this.buildTransactionComments(
+	    webhook,
+	    locale,
+	  );
+	
+	  const chargeReference = `${pspReference}-Charge`;
+	
+	  log.info("[CHARGEBACK] Webhook received", {
+	    paymentId,
+	    pspReference,
+	    chargeReference,
+	    eventType: webhook.event?.type,
+	    eventTid: webhook.event?.tid,
+	    parentTid: webhook.event?.parent_tid,
+	    amount: webhook.transaction?.amount,
+	    currency: webhook.transaction?.currency,
+	    status: webhook.transaction?.status,
+	  });
+	
+	  // Update only the Charge transaction.
+	  await this.updatePaymentTransaction({
+	    paymentId,
+	    pspReference: chargeReference,
+	    transactionComments,
+	    statusCode: webhook.transaction?.status_code,
+	    state: "Failure",
+	    appendComments: true,
+	    setStatusInterfaceCode: true,
+	    changeTransactionState: true,
+	    errorMessage: "Charge transaction not found",
+	  });
+	
+	  // Sync updated payment comments to the Order.
+	  await this.syncPaymentToOrder(paymentId, chargeReference);
+	
+	  const container = "nn-private-data";
+	  const key = `${paymentId}-${pspReference}`;
+	
+	  let customObject: any = null;
+	
+	  try {
+	    const response = await projectApiRoot
+	      .customObjects()
+	      .withContainerAndKey({
+	        container,
+	        key,
+	      })
+	      .get()
+	      .execute();
+	
+	    customObject = response.body;
+	  } catch {
+	    customObject = null;
+	  }
+	
+	  const existingComments =
+	    customObject?.value?.additionalInfo?.comments ?? "";
+	
+	  const finalComments = existingComments
+	    ? `${existingComments}\n\n---\n${transactionComments}`
+	    : transactionComments;
+	
+	  await customObjectService.upsert(
+	    container,
+	    key,
+	    {
+	      ...(customObject?.value ?? {}),
+	      status: "FAILURE",
+	      additionalInfo: {
+	        ...(customObject?.value?.additionalInfo ?? {}),
+	        comments: finalComments,
+	        lastChargebackTid: String(webhook.event?.tid ?? ""),
+	        lastChargebackAmount: Number(
+	          webhook.transaction?.amount ?? 0,
+	        ),
+	      },
+	    },
+	  );
+	
+	  log.info("[CHARGEBACK] Completed", {
+	    paymentId,
+	    pspReference,
+	    chargeReference,
+	  });
+	
+	  return transactionComments;
+	}
 
   public async handlePaymentReminder(webhook: any) {
     const reminderIndex = webhook.event.type.split("_")[2];
@@ -3718,7 +3741,20 @@ private buildTransactionComments(
           return "";
       }
     }
-      
+	case "CHARGEBACK":
+	case "RETURN_DEBIT":
+	case "REVERSAL":
+	  return t(locale, "callback.chargebackComment", {
+		parentTID,
+		amount: (
+		  Number(webhook.transaction?.amount ?? 0) / 100
+		).toFixed(2),
+		currency: webhook.transaction?.currency ?? "",
+		date,
+		time,
+		transactionID: eventTID,
+	  });
+		  
     default:
       return "";
   }
