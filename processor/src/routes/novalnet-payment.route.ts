@@ -141,7 +141,7 @@ export const paymentRoutes = async (
       path?: string;
     };
 
-    const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
+    const accessKey = String(getConfig()?.novalnetPrivateKey ?? "");
     const reverseKey = accessKey.split("").reverse().join("");
 
     if (query.tid && query.status && query.checksum && query.txn_secret) {
