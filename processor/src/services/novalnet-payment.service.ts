@@ -3754,7 +3754,7 @@ private buildTransactionComments(
 		currency: webhook.transaction?.currency ?? "",
 		date,
 		time,
-		transactionID: eventTID,
+		eventTID,
 	  });
 		  
     default:
