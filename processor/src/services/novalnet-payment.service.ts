@@ -1234,7 +1234,7 @@ private getTransactionStatus(status?: string): {
 }
 
   private async callNovalnet<T = any>(url: string, payload: unknown): Promise<T> {
-    const accessKey = String(getConfig()?.novalnetPublicKey ?? "");
+    const accessKey = String(getConfig()?.novalnetPrivateKey ?? "");
   
     const response = await fetch(url, {
       method: "POST",
@@ -2741,7 +2741,7 @@ public async validateIpAddress(
       checksumString += String(currency);
     }
   
-    const accessKey = String(getConfig()?.novalnetPublicKey ?? "").trim();
+    const accessKey = String(getConfig()?.novalnetPrivateKey ?? "").trim();
     const reversedKey = accessKey.split("").reverse().join("");
   
     if (accessKey) {
