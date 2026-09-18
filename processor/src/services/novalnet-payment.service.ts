@@ -2427,7 +2427,7 @@ private async handleTransactionUpdate(
       transactionComments,
       statusCode: "100",
       state: "Success",
-      appendComments: false,
+      appendComments: true,
       setStatusInterfaceCode: true,
       changeTransactionState: false,
     });
