@@ -2510,8 +2510,6 @@ private async handleTransactionUpdate(
 	    locale,
 	  );
 	
-	  const chargeReference = `${pspReference}-Charge`;
-	
 	  log.info("[CHARGEBACK] Webhook received", {
 	    paymentId,
 	    pspReference,
@@ -2526,7 +2524,7 @@ private async handleTransactionUpdate(
 	
 	  await this.updatePaymentTransaction({
 		paymentId,
-		pspReference: chargeReference,
+		pspReference: pspReference,
 		transactionComments,
 		statusCode: webhook.transaction?.status_code,
 		state: "Failure",
