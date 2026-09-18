@@ -734,7 +734,7 @@ public async failureResponse({ data }: { data: any }) {
 
     const novalnetPayload = {
       merchant: {
-        signature: String(getConfig()?.novalnetPrivateKey),
+        signature: String(getConfig()?.novalnetPublicKey),
         tariff: String(getConfig()?.novalnetTariff),
       },
       customer: {
@@ -3160,7 +3160,7 @@ public async createRedirectPayment(
       signature:
         String(
           getConfig()
-            ?.novalnetPrivateKey ??
+            ?.novalnetPublicKey ??
             "",
         ),
 
