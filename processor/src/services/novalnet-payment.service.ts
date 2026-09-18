@@ -2517,20 +2517,19 @@ private async handleTransactionUpdate(
 	    status: webhook.transaction?.status,
 	  });
 	
-	  // Update only the Charge transaction.
 	  await this.updatePaymentTransaction({
-	    paymentId,
-	    pspReference: chargeReference,
-	    transactionComments,
-	    statusCode: webhook.transaction?.status_code,
-	    state: "Failure",
-	    appendComments: true,
-	    setStatusInterfaceCode: true,
-	    changeTransactionState: true,
-	    errorMessage: "Charge transaction not found",
+		paymentId,
+		pspReference: chargeReference,
+		transactionComments,
+		statusCode: webhook.transaction?.status_code,
+		state: "Failure",
+		appendComments: true,
+		setCustomType: true,
+		setStatusInterfaceCode: true,
+		changeTransactionState: true,
+		errorMessage: "Charge transaction not found",
 	  });
-	
-	  // Sync updated payment comments to the Order.
+
 	  await this.syncPaymentToOrder(paymentId, chargeReference);
 	
 	  const container = "nn-private-data";
