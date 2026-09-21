@@ -857,8 +857,19 @@ public async failureResponse({ data }: { data: any }) {
       txnSecret: redirectUrl,
       };
     }
+	  
     const statusCode = parsedResponse?.transaction?.status_code;
     const status = String(parsedResponse?.transaction?.status ?? "").toUpperCase();
+	
+	const orderStates = this.mapNovalnetOrderStates({
+		status,
+	});
+	
+	await this.updateOrderStates({
+		paymentId: parsedData.ctPaymentId,
+		...orderStates,
+	});
+	  
     const { state, transactionType } = this.getTransactionStatus(status);
     const transactions = parsedResponse?.transaction;
     const amount = transactions?.amount;
