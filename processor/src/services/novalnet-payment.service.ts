@@ -866,7 +866,7 @@ public async failureResponse({ data }: { data: any }) {
 	});
 	
 	await this.updateOrderStates({
-		paymentId: parsedData.ctPaymentId,
+		paymentId: ctPayment.id,
 		...orderStates,
 	});
 	  
