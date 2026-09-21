@@ -272,7 +272,16 @@ public async failureResponse({ data }: { data: any }) {
       },
     })
     .execute();
-
+	
+	const orderStates = this.mapNovalnetOrderStates({
+	  status: "FAILURE",
+	});
+	
+	await this.updateOrderStates({
+	  paymentId: parsedData.ctPaymentID,
+	  ...orderStates,
+	});
+	
   log.info("[failureResponse] Payment failure comments saved", {
     ctPaymentID: parsedData.ctPaymentID,
     transactionId: txId,
@@ -429,7 +438,16 @@ public async failureResponse({ data }: { data: any }) {
         state,
         statusCode,
       });
-
+		
+	  const orderStates = this.mapNovalnetOrderStates({
+	    status,
+	  });
+	
+	  await this.updateOrderStates({
+	    paymentId: parsedData.ctPaymentId,
+	    ...orderStates,
+	  });
+		
       const updatedPaymentRoot = await projectApiRoot
         .payments()
         .withId({ ID: parsedData.ctPaymentId })
@@ -823,7 +841,16 @@ public async failureResponse({ data }: { data: any }) {
           parsedResponse?.transaction?.payment_type ??
           request.data.paymentMethod.type,
       });
-
+		
+	  const initialStates = this.mapNovalnetOrderStates({
+		status: "PENDING",
+	  });
+		
+	  await this.updateOrderStates({
+		  paymentId: ctPayment.id,
+		  ...initialStates,
+	  });
+		
       const redirectUrl = parsedResponse?.result?.redirect_url;
       return {
       paymentReference: ctPayment.id,
@@ -3184,6 +3211,15 @@ public async createRedirectPayment(
     } as unknown as any,
   } as any);
 
+  const initialStates = this.mapNovalnetOrderStates({
+	status: "PENDING",
+  });
+	
+  await this.updateOrderStates({
+	  paymentId: ctPayment.id,
+	  ...initialStates,
+  });
+	
   const orderNumber =
     getFutureOrderNumberFromContext() ??
     "";
