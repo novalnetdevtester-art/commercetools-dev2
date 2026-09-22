@@ -273,7 +273,7 @@ public async failureResponse({ data }: { data: any }) {
     })
     .execute();
 	
-	const orderStates = this.({
+	const orderStates = this.mapNovalnetOrderStates({
 	  status: "FAILURE",
 	});
 	
