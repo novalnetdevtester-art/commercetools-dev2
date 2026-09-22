@@ -594,8 +594,8 @@ public async failureResponse({ data }: { data: any }) {
       const orderTotal = Number(
         parsedCart?.taxedPrice?.totalGross?.centAmount ?? 0,
       );
-      const minAmount = Number(minimumAmount) || 0;
-      const amountValid = orderTotal >= minAmount;
+      
+      const amountValid = orderTotal >= 999;
 
       const countryAllowed =
         allowb2bCustomers &&
@@ -614,7 +614,7 @@ public async failureResponse({ data }: { data: any }) {
         forceNonGuarantee !== null &&
         !Number.isNaN(Number(forceNonGuarantee)) &&
         Number(forceNonGuarantee) !== 0;
-      if (isForceNonGuarantee && guaranteePayment) {
+      if (isForceNonGuarantee && !guaranteePayment) {
         if (paymentType === "GUARANTEED_DIRECT_DEBIT_SEPA") {
           transaction.payment_type = "DIRECT_DEBIT_SEPA";
         }
