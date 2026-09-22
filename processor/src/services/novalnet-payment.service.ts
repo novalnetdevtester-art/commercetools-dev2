@@ -1262,7 +1262,7 @@ private getTransactionStatus(status?: string): {
   }
 }
 		
-	private ({
+private mapNovalnetOrderStates({
 	  status,
 	  eventType,
 	  isPartialCredit = false,
