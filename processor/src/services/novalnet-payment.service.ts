@@ -273,14 +273,14 @@ public async failureResponse({ data }: { data: any }) {
     })
     .execute();
 	
-	const orderStates = this.mapNovalnetOrderStates({
-	  status: "FAILURE",
-	});
+	//const orderStates = this.mapNovalnetOrderStates({
+	//  status: "FAILURE",
+	//});
 	
-	await this.updateOrderStates({
-	  paymentId: parsedData.ctPaymentID,
-	  ...orderStates,
-	});
+	//await this.updateOrderStates({
+	 // paymentId: parsedData.ctPaymentID,
+	 // ...orderStates,
+	//});
 	
   log.info("[failureResponse] Payment failure comments saved", {
     ctPaymentID: parsedData.ctPaymentID,
@@ -501,14 +501,14 @@ public async failureResponse({ data }: { data: any }) {
         throw err;
       }
 		
-	  const orderStates = this.mapNovalnetOrderStates({
-	    status,
-	  });
+	 // const orderStates = this.mapNovalnetOrderStates({
+	  //  status,
+	  //});
 	
-	  await this.updateOrderStates({
-	    paymentId: parsedData.ctPaymentId,
-	    ...orderStates,
-	  });
+	  //await this.updateOrderStates({
+	  //  paymentId: parsedData.ctPaymentId,
+	   // ...orderStates,
+	  //});
 		
       log.info("[transactionUpdate] Order payment comments synced", {
         orderId,
@@ -985,14 +985,14 @@ public async failureResponse({ data }: { data: any }) {
       },
     );
 	  
-	const orderStates = this.mapNovalnetOrderStates({
-	  status: parsedResponse?.transaction?.status,
-	});
+	//const orderStates = this.mapNovalnetOrderStates({
+	 // status: parsedResponse?.transaction?.status,
+	//});
 	
-	await this.updateOrderStates({
-	  paymentId: ctPayment.id,
-	  ...orderStates,
-	});
+	//await this.updateOrderStates({
+	//  paymentId: ctPayment.id,
+	//  ...orderStates,
+	//});
 	  
     return {
       paymentReference: ctPayment.id,
