@@ -273,7 +273,7 @@ public async failureResponse({ data }: { data: any }) {
     })
     .execute();
 	
-	const orderStates = this.mapNovalnetOrderStates({
+	const orderStates = this.({
 	  status: "FAILURE",
 	});
 	
@@ -439,15 +439,6 @@ public async failureResponse({ data }: { data: any }) {
         statusCode,
       });
 		
-	  const orderStates = this.mapNovalnetOrderStates({
-	    status,
-	  });
-	
-	  await this.updateOrderStates({
-	    paymentId: parsedData.ctPaymentId,
-	    ...orderStates,
-	  });
-		
       const updatedPaymentRoot = await projectApiRoot
         .payments()
         .withId({ ID: parsedData.ctPaymentId })
@@ -509,7 +500,16 @@ public async failureResponse({ data }: { data: any }) {
         log.error("CustomObject error", err);
         throw err;
       }
-
+		
+	  const orderStates = this.mapNovalnetOrderStates({
+	    status,
+	  });
+	
+	  await this.updateOrderStates({
+	    paymentId: parsedData.ctPaymentId,
+	    ...orderStates,
+	  });
+		
       log.info("[transactionUpdate] Order payment comments synced", {
         orderId,
         ctPaymentId: parsedData.ctPaymentId,
@@ -842,16 +842,8 @@ public async failureResponse({ data }: { data: any }) {
           request.data.paymentMethod.type,
       });
 		
-	  const initialStates = this.mapNovalnetOrderStates({
-		status: "PENDING",
-	  });
-		
-	  await this.updateOrderStates({
-		  paymentId: ctPayment.id,
-		  ...initialStates,
-	  });
-		
       const redirectUrl = parsedResponse?.result?.redirect_url;
+		
       return {
       paymentReference: ctPayment.id,
       txnSecret: redirectUrl,
@@ -860,16 +852,6 @@ public async failureResponse({ data }: { data: any }) {
 	  
     const statusCode = parsedResponse?.transaction?.status_code;
     const status = String(parsedResponse?.transaction?.status ?? "").toUpperCase();
-	
-	const orderStates = this.mapNovalnetOrderStates({
-		status,
-	});
-	
-	await this.updateOrderStates({
-		paymentId: ctPayment.id,
-		...orderStates,
-	});
-	  
     const { state, transactionType } = this.getTransactionStatus(status);
     const transactions = parsedResponse?.transaction;
     const amount = transactions?.amount;
@@ -1002,7 +984,16 @@ public async failureResponse({ data }: { data: any }) {
         email: parsedResponse?.customer?.email ?? "",
       },
     );
-
+	  
+	const orderStates = this.mapNovalnetOrderStates({
+	  status: parsedResponse?.transaction?.status,
+	});
+	
+	await this.updateOrderStates({
+	  paymentId: ctPayment.id,
+	  ...orderStates,
+	});
+	  
     return {
       paymentReference: ctPayment.id,
       novalnetResponse: parsedResponse,
@@ -1271,7 +1262,7 @@ private getTransactionStatus(status?: string): {
   }
 }
 		
-	private mapNovalnetOrderStates({
+	private ({
 	  status,
 	  eventType,
 	  isPartialCredit = false,
@@ -1433,6 +1424,7 @@ private getTransactionStatus(status?: string): {
 	    paymentState,
 	  });
 	}
+	
   private async callNovalnet<T = any>(url: string, payload: unknown): Promise<T> {
     const accessKey = String(getConfig()?.novalnetPrivateKey ?? "");
   
@@ -3221,15 +3213,6 @@ public async createRedirectPayment(
       },
     } as unknown as any,
   } as any);
-
-  const initialStates = this.mapNovalnetOrderStates({
-	status: "PENDING",
-  });
-	
-  await this.updateOrderStates({
-	  paymentId: ctPayment.id,
-	  ...initialStates,
-  });
 	
   const orderNumber =
     getFutureOrderNumberFromContext() ??
