@@ -82,15 +82,40 @@ function getNovalnetConfigValues(
   };
 }
 
-function getPaymentDueDate(configuredDueDate: number | string): string | null {
-  const days = Number(configuredDueDate);
-  if (isNaN(days)) {
-    return null;
+function getPaymentDueDate(
+  paymentType: string,
+  configuredDueDate?: number | string | null,
+): string {
+  let days = Number(configuredDueDate);
+  const type = paymentType.toUpperCase();
+
+  if (!configuredDueDate || Number.isNaN(days) || days <= 0) {
+    days = 14;
   }
+
+  switch (type) {
+    case "DIRECT_DEBIT_SEPA":
+    case "GUARANTEED_DIRECT_DEBIT_SEPA":
+      days = Math.max(2, Math.min(14, days));
+      break;
+
+    case "PREPAYMENT":
+      days = Math.max(7, Math.min(28, days));
+      break;
+
+    case "INVOICE":
+    case "GUARANTEED_INVOICE":
+      days = Math.max(8, days);
+      break;
+
+    default:
+      break;
+  }
+
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + days);
-  const formattedDate = dueDate.toISOString().split("T")[0];
-  return formattedDate;
+
+  return dueDate.toISOString().split("T")[0];
 }
 
 export class NovalnetPaymentService extends AbstractPaymentService {
