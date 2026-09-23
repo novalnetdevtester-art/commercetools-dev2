@@ -571,7 +571,7 @@ public async failureResponse({ data }: { data: any }) {
     const deliveryAddress = await this.ctcc(ctCart);
     const billingAddress = await this.ctbb(ctCart);
     const parsedCart = typeof ctCart === "string" ? JSON.parse(ctCart) : ctCart;
-    const dueDateValue = getPaymentDueDate(dueDate);
+    const dueDateValue = getPaymentDueDate(type, dueDate);
     const lang = String(request.data?.lang ?? "en") as SupportedLocale;
     const orderNumber = getFutureOrderNumberFromContext() ?? "";
     const transaction: Record<string, any> = {
