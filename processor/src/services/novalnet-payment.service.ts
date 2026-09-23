@@ -614,6 +614,13 @@ public async failureResponse({ data }: { data: any }) {
         forceNonGuarantee !== null &&
         !Number.isNaN(Number(forceNonGuarantee)) &&
         Number(forceNonGuarantee) !== 0;
+
+	  if (!guaranteePayment && !isForceNonGuarantee) {
+		 throw new Error(
+		 "Guaranteed payment is not available. Please choose another payment method."
+		 );
+	  }
+		
       if (isForceNonGuarantee && !guaranteePayment) {
         if (paymentType === "GUARANTEED_DIRECT_DEBIT_SEPA") {
           transaction.payment_type = "DIRECT_DEBIT_SEPA";
