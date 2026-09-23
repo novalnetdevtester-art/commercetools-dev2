@@ -1741,7 +1741,7 @@ private async processWebhookTransaction({
   await this.validateChecksum(webhook);
 
   if (req) {
-    //await this.validateIpAddress(req);
+    await this.validateIpAddress(req);
   }
 
   await this.getOrderDetails(webhook);
