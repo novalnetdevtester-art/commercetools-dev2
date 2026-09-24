@@ -3228,7 +3228,7 @@ public async createRedirectPayment(
       interactionId:
         pspReference,
 
-      state: "Initial",
+      state: "Pending",
 
       custom: {
         type: {
@@ -3732,7 +3732,7 @@ private async createInitialPaymentTransaction({
       type: "Authorization",
       amount,
       interactionId: pspReference,
-      state: "Initial",
+      state: "Pending",
     },
   } as any);
 }
