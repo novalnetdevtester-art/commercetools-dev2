@@ -46,7 +46,6 @@ type NovalnetConfig = {
   minimumAmount: string;
   enforce3d: string;
   displayInline: string;
-  allowb2bCustomers: string;
   forceNonGuarantee: string;
 };
 
@@ -73,9 +72,6 @@ function getNovalnetConfigValues(
     minimumAmount: String(config?.[`novalnet_${upperType}_MinimumAmount`]),
     enforce3d: String(config?.[`novalnet_${upperType}_Enforce3d`]),
     displayInline: String(config?.[`novalnet_${upperType}_DisplayInline`]),
-    allowb2bCustomers: String(
-      config?.[`novalnet_${upperType}_Allowb2bCustomers`],
-    ),
     forceNonGuarantee: String(
       config?.[`novalnet_${upperType}_ForceNonGuarantee`],
     ),
@@ -560,7 +556,6 @@ public async failureResponse({ data }: { data: any }) {
       minimumAmount,
       enforce3d,
       displayInline,
-      allowb2bCustomers,
       forceNonGuarantee,
     } = getNovalnetConfigValues(type, config);
     await createTransactionCommentsType();
@@ -609,9 +604,9 @@ public async failureResponse({ data }: { data: any }) {
         billingAddress?.postalCode === deliveryAddress?.postalCode;
 
       const billingCountry = billingAddress && billingAddress.country;
-      const isEuropean = billingCountry
-        ? this.getEuropeanRegionCountryCodes().includes(billingCountry)
-        : false;
+      // const isEuropean = billingCountry
+      //   ? this.getEuropeanRegionCountryCodes().includes(billingCountry)
+      //   : false;
 
       const isEur =
         String(parsedCart?.taxedPrice?.totalGross?.currencyCode) === "EUR";
@@ -623,13 +618,11 @@ public async failureResponse({ data }: { data: any }) {
       const amountValid = orderTotal >= 999;
 
       const countryAllowed =
-        allowb2bCustomers &&
         billingCountry &&
         ["DE", "AT", "CH"].includes(billingCountry);
 
       const guaranteePayment =
         Boolean(sameAddress) &&
-        Boolean(isEuropean) &&
         Boolean(isEur) &&
         Boolean(amountValid) &&
         Boolean(countryAllowed);
@@ -640,11 +633,11 @@ public async failureResponse({ data }: { data: any }) {
         !Number.isNaN(Number(forceNonGuarantee)) &&
         Number(forceNonGuarantee) !== 0;
 
-	  if (!guaranteePayment && !isForceNonGuarantee) {
-		 throw new Error(
-		 "Guaranteed payment is not available. Please choose another payment method."
-		 );
-	  }
+      if (!guaranteePayment && !isForceNonGuarantee) {
+        throw new Error(
+        "Guaranteed payment is not available. Please choose another payment method."
+        );
+      }
 		
       if (isForceNonGuarantee && !guaranteePayment) {
         if (paymentType === "GUARANTEED_DIRECT_DEBIT_SEPA") {
@@ -865,7 +858,7 @@ public async failureResponse({ data }: { data: any }) {
         fullResponse: parsedResponse,
       });
 
-      await this.createPendingPaymentTransaction({
+      await this.createInitialPaymentTransaction({
         paymentId: ctPayment.id,
         amount: ctPayment.amountPlanned,
         pspReference,
@@ -3230,7 +3223,7 @@ public async createRedirectPayment(
       interactionId:
         pspReference,
 
-      state: "Pending",
+      state: "Initial",
 
       custom: {
         type: {
@@ -3715,7 +3708,7 @@ public async createRedirectPayment(
   };
 }
 
-private async createPendingPaymentTransaction({
+private async createInitialPaymentTransaction({
   paymentId,
   amount,
   pspReference,
@@ -3734,7 +3727,7 @@ private async createPendingPaymentTransaction({
       type: "Authorization",
       amount,
       interactionId: pspReference,
-      state: "Pending",
+      state: "Initial",
     },
   } as any);
 }
@@ -3984,138 +3977,7 @@ private buildTransactionComments(
     default:
       return "";
   }
-}
-  
-   private async getOrderIdFromOrderNumber(
-    orderNumber: string,
-  ): Promise<string | undefined> {
-  
-    if (!orderNumber) {
-  
-      log.warn("[ORDER] Empty order number");
-  
-      return;
-    }
-  
-    const result =
-      await projectApiRoot
-        .orders()
-        .get({
-          queryArgs: {
-            where: `orderNumber="${orderNumber}"`,
-            limit: 1,
-          },
-        })
-        .execute();
-  
-    const orderId =
-      result.body.results[0]?.id;
-  
-    return orderId;
-  }
-
-    private async updateOrderComments(
-    orderId: string,
-  ): Promise<void> {
-  
-    log.info("[ORDER] Comment synchronization started", {
-      orderId,
-    });
-  
-    const order = (
-      await projectApiRoot
-        .orders()
-        .withId({ ID: orderId })
-        .get()
-        .execute()
-    ).body;
-  
-    const paymentId =
-      order.paymentInfo?.payments?.[0]?.id;
-  
-    if (!paymentId) {
-  
-      log.warn("[ORDER] No payment linked", {
-        orderId,
-      });
-  
-      return;
-    }
-  
-    const payment = (
-      await projectApiRoot
-        .payments()
-        .withId({ ID: paymentId })
-        .get()
-        .execute()
-    ).body;
-  
-    const transaction = [...(payment.transactions ?? [])]
-      .reverse()
-      .find(tx => tx.interactionId);
-  
-    if (!transaction) {
-  
-      log.warn("[ORDER] No transaction found", {
-        orderId,
-        paymentId,
-      });
-  
-      return;
-    }
-  
-    const pspReference =
-      transaction.interactionId;
-  
-    const customObject =
-      await customObjectService.get(
-        "nn-private-data",
-        `${paymentId}-${pspReference}`,
-      );
-  
-    const comments =
-      customObject?.value?.comments;
-  
-    if (!comments) {
-  
-      log.info("[ORDER] No comments found in CustomObject", {
-        paymentId,
-        pspReference,
-      });
-  
-      return;
-    }
-  
-    const currentComments =
-      order.custom?.fields?.transactionComments;
-  
-    if (currentComments === comments) {
-  
-      log.info("[ORDER] Comments already synchronized", {
-        orderId,
-      });
-  
-      return;
-    }
-  
-    const updated =
-      await projectApiRoot
-        .orders()
-        .withId({ ID: orderId })
-        .post({
-          body: {
-            version: order.version,
-            actions: [
-              {
-                action: "setCustomField",
-                name: "transactionComments",
-                value: comments,
-              },
-            ],
-          },
-        })
-        .execute();
-  }
+} 
 
   public splitStreetByComma(street?: string): {
     streetName: string;
