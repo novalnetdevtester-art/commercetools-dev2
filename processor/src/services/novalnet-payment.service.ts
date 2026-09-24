@@ -858,7 +858,7 @@ public async failureResponse({ data }: { data: any }) {
         fullResponse: parsedResponse,
       });
 
-      await this.createInitialPaymentTransaction({
+      await this.createPendingPaymentTransaction({
         paymentId: ctPayment.id,
         amount: ctPayment.amountPlanned,
         pspReference,
@@ -3713,7 +3713,7 @@ public async createRedirectPayment(
   };
 }
 
-private async createInitialPaymentTransaction({
+private async createPendingPaymentTransaction({
   paymentId,
   amount,
   pspReference,
