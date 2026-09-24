@@ -1758,8 +1758,13 @@ private async processWebhookTransaction({
     
   await this.validateChecksum(webhook);
 
-  if (req) {
-    await this.validateIpAddress(req);
+  const config = getConfig();
+  const isWebhookTestMode = String(config.novalnetWebhookTestMode ?? "0") === "1";
+	
+  if (req && !isWebhookTestMode) {
+	 await this.validateIpAddress(req);
+  } else if (req && isWebhookTestMode) {
+	 log.info("[WEBHOOK] IP validation skipped (webhook test mode enabled)");
   }
 
   await this.getOrderDetails(webhook);
