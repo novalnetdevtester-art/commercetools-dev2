@@ -1263,7 +1263,7 @@ private getTransactionStatus(status?: string): {
     case "PENDING":
     case "ON_HOLD":
       return {
-        state: "Pending",
+        state: "Success",
         transactionType: "Authorization",
       };
 
