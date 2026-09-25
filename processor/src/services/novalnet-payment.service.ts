@@ -1780,7 +1780,30 @@ private async processWebhookTransaction({
     tid: webhook?.event?.tid,
     paymentType: webhook?.transaction?.payment_type,
   });
-
+	  
+  const shopInvoked =
+	 String(webhook.custom?.shop_invoked ?? "0") === "1";
+	 
+  if (shopInvoked) {
+	  log.info(
+	  "[WEBHOOK] Skipped — already handled via Payment Intent (shop_invoked=1)",
+	  {
+  	    eventType,
+		status,
+		tid: webhook?.event?.tid,
+		paymentId:
+		webhook.custom?.["ctpayment-id"] ?? webhook.custom?.inputval1,
+	  },
+   );
+	 
+    return {
+	  success: true,
+	  skipped: true,
+	  reason: "shop_invoked",
+	  eventType,
+    };
+  }
+	  
   if (status !== "SUCCESS") {
 
     log.warn("Webhook ignored (non-success)", {
