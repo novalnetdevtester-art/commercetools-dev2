@@ -22,6 +22,7 @@ import {
   StatusResponseSchemaDTO,
 } from "../dtos/operations/status.dto";
 import { AbstractPaymentService } from "../services/abstract-payment.service";
+import { log } from "../libs/logger";
 
 type OperationRouteOptions = {
   sessionHeaderAuthHook: SessionHeaderAuthenticationHook;
