@@ -1,8 +1,12 @@
 import { Static, Type } from "@sinclair/typebox";
 
 export const AmountSchema = Type.Object({
-  centAmount: Type.Integer(),
-  currencyCode: Type.String(),
+  centAmount: Type.Integer({
+    description: "Amount in the smallest currency unit.",
+  }),
+  currencyCode: Type.String({
+    description: "ISO 4217 currency code.",
+  }),
 });
 
 export const ActionCapturePaymentSchema = Type.Composite([
