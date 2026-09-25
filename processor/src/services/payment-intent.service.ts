@@ -147,18 +147,18 @@ async function callNovalnet(
       throw new Error(`HTTP ${response.status}`);
     }
 
-    const parsed = JSONbig({
-      storeAsString: true,
-    }).parse(await response.text());
+    const parsed = JSONbig({ storeAsString: true }).parse(await response.text());
     
-    log.info("[NOVALNET][RESPONSE]", {
-      endpoint: path,
-      status: body?.result?.status,
-      statusCode: body?.result?.status_code,
-      statusText: body?.result?.status_text,
+    const body = JSON.parse(JSON.stringify(parsed)) as NovalnetReply;
+    
+    log.info("[PaymentIntent] Novalnet response", {
+      status: body.result?.status,
+      statusCode: body.result?.status_code,
+      tid: body.transaction?.tid,
     });
-
-    return JSON.parse(JSON.stringify(parsed));
+    
+    return body;
+    
   } finally {
     clearTimeout(timeout);
   }
@@ -272,6 +272,11 @@ export async function executePaymentIntent(
     transaction,
   });
   
+  
+  const status = String(
+    response.result?.status ?? "",
+  ).toUpperCase();
+  
   log.info("[PAYMENT_INTENT][PSP_RESULT]", {
     paymentId,
     tid,
@@ -279,10 +284,6 @@ export async function executePaymentIntent(
     status,
   });
   
-  const status = String(
-    response.result?.status ?? "",
-  ).toUpperCase();
-
   if (status === "SUCCESS") {
     return {
       outcome: PaymentModificationStatus.APPROVED,
