@@ -109,17 +109,43 @@ export const operationsRoute = async (
         body: PaymentIntentRequestSchema,
         response: {
           200: PaymentIntentResponseSchema,
+          400: Type.Object({
+            message: Type.String(),
+          }),
         },
       },
     },
     async (request, reply) => {
       const { id } = request.params;
-      const resp = await opts.paymentService.modifyPayment({
+  
+      log.info("[PAYMENT_INTENT][ROUTE][REQUEST]", {
         paymentId: id,
-        data: request.body,
+        action: request.body.actions?.[0]?.action,
+        merchantReference:
+          request.body.actions?.[0]?.merchantReference,
       });
-
-      return reply.status(200).send(resp);
+  
+      try {
+        const resp = await opts.paymentService.modifyPayment({
+          paymentId: id,
+          data: request.body,
+        });
+  
+        log.info("[PAYMENT_INTENT][ROUTE][SUCCESS]", {
+          paymentId: id,
+          outcome: resp.outcome,
+        });
+  
+        return reply.status(200).send(resp);
+      } catch (err) {
+        log.error("[PAYMENT_INTENT][ROUTE][FAILED]", {
+          paymentId: id,
+          action: request.body.actions?.[0]?.action,
+          error: err,
+        });
+  
+        throw err;
+      }
     },
   );
 };
