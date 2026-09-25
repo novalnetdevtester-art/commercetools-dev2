@@ -86,7 +86,11 @@ export const operationsRoute = async (
 
   fastify.post<{
     Body: PaymentIntentRequestSchemaDTO;
-    Reply: PaymentIntentResponseSchemaDTO;
+    Reply:
+      | PaymentIntentResponseSchemaDTO
+      | {
+          message: string;
+        };
     Params: { id: string };
   }>(
     "/payment-intents/:id",
