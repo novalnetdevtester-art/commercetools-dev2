@@ -27,6 +27,13 @@ type NovalnetReply = {
     status_text?: string;
     status_code?: number | string;
   };
+  transaction?: {
+    tid?: string;
+    status?: string;
+    refund?: {
+      tid?: string;
+    };
+  };
 };
 
 function assertRequest(
