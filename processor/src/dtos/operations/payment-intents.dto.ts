@@ -1,4 +1,5 @@
 import { Static, Type } from "@sinclair/typebox";
+
 export const AmountSchema = Type.Object({
   centAmount: Type.Integer(),
   currencyCode: Type.String(),
@@ -38,21 +39,6 @@ export const ActionReversePaymentSchema = Type.Composite([
   }),
 ]);
 
-/**
- * Payment intent request schema.
- *
- * Example:
- * {
- *  "actions": [
- *   {
- *    "action": "capturePayment",
- *    "amount": {
- *      "centAmount": 100,
- *      "currencyCode": "EUR"
- *    }
- *  ]
- * }
- */
 export const PaymentIntentRequestSchema = Type.Object({
   actions: Type.Array(
     Type.Union([
@@ -62,6 +48,7 @@ export const PaymentIntentRequestSchema = Type.Object({
       ActionReversePaymentSchema,
     ]),
     {
+      minItems: 1,
       maxItems: 1,
     },
   ),
@@ -72,16 +59,18 @@ export enum PaymentModificationStatus {
   REJECTED = "rejected",
   RECEIVED = "received",
 }
+
 const PaymentModificationSchema = Type.Enum(PaymentModificationStatus);
 
 export const PaymentIntentResponseSchema = Type.Object({
   outcome: PaymentModificationSchema,
+  paymentReference: Type.Optional(Type.String()),
 });
 
-export type PaymentIntentRequestSchemaDTO = Static<
-  typeof PaymentIntentRequestSchema
->;
-export type PaymentIntentResponseSchemaDTO = Static<
-  typeof PaymentIntentResponseSchema
->;
+export type PaymentIntentRequestSchemaDTO =
+  Static<typeof PaymentIntentRequestSchema>;
+
+export type PaymentIntentResponseSchemaDTO =
+  Static<typeof PaymentIntentResponseSchema>;
+
 export type AmountSchemaDTO = Static<typeof AmountSchema>;
