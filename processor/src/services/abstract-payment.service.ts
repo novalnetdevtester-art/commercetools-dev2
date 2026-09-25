@@ -2,14 +2,13 @@ import {
   CommercetoolsCartService,
   CommercetoolsPaymentService,
 } from "@commercetools/connect-payments-sdk";
-import {
-  ConfigResponse,
-  ModifyPayment,
-  PaymentProviderModificationResponse,
-  StatusResponse,
-} from "./types/operation.type";
+
+import { ConfigResponse, ModifyPayment, StatusResponse } from "./types/operation.type";
 
 import { SupportedPaymentComponentsSchemaDTO } from "../dtos/operations/payment-componets.dto";
+import { PaymentIntentResponseSchemaDTO } from "../dtos/operations/payment-intents.dto";
+
+import { executePaymentIntent } from "./payment-intent.service";
 
 export abstract class AbstractPaymentService {
   protected ctCartService: CommercetoolsCartService;
@@ -64,10 +63,11 @@ export abstract class AbstractPaymentService {
    */
   public async modifyPayment(
     opts: ModifyPayment,
-  ): Promise<PaymentProviderModificationResponse> {
-    const ctPayment = await this.ctPaymentService.getPayment({
-      id: opts.paymentId,
-    });
-    return {} as PaymentProviderModificationResponse;
+  ): Promise<PaymentIntentResponseSchemaDTO> {
+    return executePaymentIntent(
+      this.ctPaymentService,
+      opts.paymentId,
+      opts.data,
+    );
   }
 }
