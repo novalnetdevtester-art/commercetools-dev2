@@ -123,21 +123,23 @@ export const operationsRoute = async (
         paymentId: id,
         action: request.body.actions?.[0]?.action,
         merchantReference:
-          request.body.actions?.[0]?.merchantReference,
+          request.body.actions?.[0]
+            ?.merchantReference,
       });
   
       try {
-        const resp = await opts.paymentService.modifyPayment({
-          paymentId: id,
-          data: request.body,
-        });
+        const response =
+          await opts.paymentService.modifyPayment({
+            paymentId: id,
+            data: request.body,
+          });
   
         log.info("[PAYMENT_INTENT][ROUTE][SUCCESS]", {
           paymentId: id,
-          outcome: resp.outcome,
+          outcome: response.outcome,
         });
   
-        return reply.status(200).send(resp);
+        return reply.status(200).send(response);
       } catch (err) {
         log.error("[PAYMENT_INTENT][ROUTE][FAILED]", {
           paymentId: id,
@@ -145,7 +147,12 @@ export const operationsRoute = async (
           error: err,
         });
   
-        throw err;
+        return reply.status(400).send({
+          message:
+            err instanceof Error
+              ? err.message
+              : "Payment modification failed",
+        });
       }
     },
   );
