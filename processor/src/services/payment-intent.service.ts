@@ -10,7 +10,7 @@ import {
   PaymentModificationStatus,
 } from "../dtos/operations/payment-intents.dto";
 import customObjectService from "./ct-custom-object.service";
-import log from "../libs/logger";
+import { log } from "../libs/logger";
 
 const BASE_URL = "https://payport.novalnet.de/v2";
 
