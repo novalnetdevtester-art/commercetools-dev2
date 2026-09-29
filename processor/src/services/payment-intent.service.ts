@@ -69,7 +69,7 @@ function kindOf(action: Action): Modification {
 
 function validate(payment: Payment, action: Action): void {
   const kind = kindOf(action);
-  const authorized = sum(payment, "Authorization", ["Pending", "Success"]);
+  const authorized = sum(payment, "Authorization", ["Success"]);
   const charged = sum(payment, "Charge");
   const chargeStarted = sum(payment, "Charge", ["Pending", "Success"]) > 0;
   const refundedOrPending = sum(payment, "Refund", ["Pending", "Success"]);
@@ -100,8 +100,7 @@ async function findReference(payment: Payment, kind: Modification): Promise<Refe
   const original = [...(payment.transactions ?? [])].reverse().find((transaction) =>
     kind === "refund"
       ? transaction.type === "Charge" && transaction.state === "Success"
-      : transaction.type === "Authorization" &&
-        (transaction.state === "Pending" || transaction.state === "Success"),
+      : transaction.type === "Authorization" && transaction.state === "Success",
   );
   requireValue(original?.interactionId, "Original payment transaction not found.");
 
