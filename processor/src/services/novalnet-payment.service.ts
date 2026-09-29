@@ -38,6 +38,11 @@ import customObjectService from "./ct-custom-object.service";
 import { SupportedLocale, t } from "../i18n";
 import { PaymentUpdateAction } from "@commercetools/platform-sdk";
 import JSONbig from "json-bigint";
+import { mapNovalnetOrderStates } from "./novalnet-order-state.service";
+import type {
+  NovalnetOrderStateInput,
+  NovalnetOrderStates,
+} from "./novalnet-order-state.service";
 
 type NovalnetConfig = {
   testMode: string;
@@ -58,11 +63,6 @@ type TransactionCommentParams = {
   time?: string | null;
   transactionID?: string | null;
   dueDate?: string | null;
-};
-
-type OrderStates = {
-  orderState: "Open" | "Confirmed" | "Cancelled";
-  paymentState: "Pending" | "Paid" | "BalanceDue" | "CreditOwed" | "Failed";
 };
 
 function getNovalnetConfigValues(
@@ -1292,60 +1292,8 @@ private getTransactionStatus(status?: string): {
   }
 }
 		
-private mapNovalnetOrderStates({
-  status,
-  eventType,
-  isPartialCapture = false,
-  isPartialCredit = false,
-  isPartialCancel = false,
-}: {
-  status?: string;
-  eventType?: string;
-  isPartialCapture?: boolean;
-  isPartialCredit?: boolean;
-  isPartialCancel?: boolean;
-}): OrderStates | null {
-  const paymentStatus = String(status ?? "").toUpperCase();
-  const event = String(eventType ?? "").toUpperCase();
-
-  switch (event) {
-    case "TRANSACTION_CAPTURE":
-      if (paymentStatus !== "CONFIRMED") break;
-      return isPartialCapture
-        ? { orderState: "Open", paymentState: "BalanceDue" }
-        : { orderState: "Confirmed", paymentState: "Paid" };
-    case "TRANSACTION_CANCEL":
-      return isPartialCancel
-        ? { orderState: "Open", paymentState: "BalanceDue" }
-        : { orderState: "Cancelled", paymentState: "Failed" };
-    case "CHARGEBACK":
-    case "RETURN_DEBIT":
-    case "REVERSAL":
-      return { orderState: "Cancelled", paymentState: "Failed" };
-    case "CREDIT":
-      return isPartialCredit
-        ? { orderState: "Open", paymentState: "BalanceDue" }
-        : { orderState: "Confirmed", paymentState: "Paid" };
-    case "TRANSACTION_REFUND":
-      // Keep the connector's refund business mapping; CT has no Refunded state.
-      return { orderState: "Confirmed", paymentState: "CreditOwed" };
-    case "TRANSACTION_UPDATE":
-      // The transaction status, not the event name, determines Paid/Pending.
-      break;
-  }
-
-  switch (paymentStatus) {
-    case "CONFIRMED":
-      return { orderState: "Confirmed", paymentState: "Paid" };
-    case "PENDING":
-    case "ON_HOLD":
-      return { orderState: "Open", paymentState: "Pending" };
-    case "FAILURE":
-    case "CANCELLED":
-      return { orderState: "Cancelled", paymentState: "Failed" };
-    default:
-      return null;
-  }
+private mapNovalnetOrderStates(input: NovalnetOrderStateInput): NovalnetOrderStates | null {
+  return mapNovalnetOrderStates(input);
 }
 
 private async getModificationFlags(paymentId: string, eventType: string): Promise<{
