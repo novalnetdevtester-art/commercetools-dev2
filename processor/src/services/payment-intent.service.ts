@@ -15,6 +15,7 @@ import {
   createTransactionCommentsType,
 } from "../utils/custom-fields";
 import customObjectService from "./ct-custom-object.service";
+import { mapNovalnetOrderStates } from "./novalnet-order-state.service";
 
 const BASE_URL = "https://payport.novalnet.de/v2";
 type Action = PaymentIntentRequestSchemaDTO["actions"][number];
@@ -203,7 +204,7 @@ function appendComment(existing: unknown, addition: string): string {
 
 async function syncOrderComment(paymentId: string, pspReference: string): Promise<void> {
   // This copies the original transaction's comment, matching syncPaymentToOrder in
-  // novalnet-payment.service.ts. Order states are not changed by its webhook handlers.
+  // novalnet-payment.service.ts. Order states are reconciled separately below.
   const payment = (await projectApiRoot.payments().withId({ ID: paymentId }).get().execute()).body;
   const original = [...payment.transactions].reverse().find((tx) => tx.interactionId === pspReference);
   if (!original) return;
@@ -226,6 +227,42 @@ async function syncOrderComment(paymentId: string, pspReference: string): Promis
   }
   if (order.custom?.fields?.paymentComments !== comment) {
     actions.push({ action: "setCustomField", name: "paymentComments", value: comment });
+  }
+  if (actions.length) {
+    await projectApiRoot.orders().withId({ ID: order.id }).post({
+      body: { version: order.version, actions },
+    }).execute();
+  }
+}
+
+async function syncIntentOrderStates(paymentId: string, kind: Modification,
+  reply: NovalnetReply): Promise<void> {
+  const states = mapNovalnetOrderStates({
+    status: reply.transaction?.status,
+    eventType: kind === "capture" ? "TRANSACTION_CAPTURE" :
+      kind === "cancel" ? "TRANSACTION_CANCEL" : "TRANSACTION_REFUND",
+    // The Payment Intent capture action is validated as a full capture.
+    isPartialCapture: false,
+  });
+  if (!states) return;
+
+  // Checkout creates the Order before it sends a Payment Intent. Fetch it
+  // after the Payment is saved so this uses the latest Order version.
+  const results = await projectApiRoot.orders().get({ queryArgs: {
+    where: `paymentInfo(payments(id="${paymentId}"))`, limit: 1,
+  } }).execute();
+  const order = results.body.results[0];
+  if (!order) {
+    log.warn("[PAYMENT_INTENT] Order not linked to Payment for state sync", { paymentId, kind });
+    return;
+  }
+
+  const actions: any[] = [];
+  if (order.paymentState !== states.paymentState) {
+    actions.push({ action: "changePaymentState", paymentState: states.paymentState });
+  }
+  if (order.orderState !== "Complete" && order.orderState !== states.orderState) {
+    actions.push({ action: "changeOrderState", orderState: states.orderState });
   }
   if (actions.length) {
     await projectApiRoot.orders().withId({ ID: order.id }).post({
@@ -276,8 +313,8 @@ async function saveCaptureOrCancel(payment: Payment, reference: Reference,
     }
   }
   if (actions.length) await root.post({ body: { version: latest.version, actions } }).execute();
-  // The order is a later resource in checkout; failure to write its comment
-  // must not turn a completed PSP operation into a request safe to retry.
+  // An Order write failure must not turn a completed PSP operation into a
+  // request that appears safe to retry.
   try {
     await syncOrderComment(payment.id, reference.pspReference);
   } catch (error) {
@@ -407,6 +444,15 @@ export async function executePaymentIntent(
     }
   } else {
     await saveCaptureOrCancel(payment, reference, kind, reply);
+  }
+  try {
+    await syncIntentOrderStates(payment.id, kind, reply);
+  } catch (error) {
+    // Novalnet and the Payment have already completed. Returning an error here
+    // could cause the caller to repeat a capture or refund at the PSP.
+    log.error("[PAYMENT_INTENT] Payment saved, Order state sync failed", {
+      paymentId: payment.id, kind, error,
+    });
   }
   return { outcome: PaymentModificationStatus.APPROVED, paymentReference: payment.id };
 }
