@@ -115,7 +115,7 @@ async function findReference(payment: Payment, kind: Modification): Promise<Refe
   return { original, pspReference, tid, privateData: privateObject.value };
 }
 
-async function callNovalnet(endpoint: string, transaction: object): Promise<NovalnetReply> {
+async function callNovalnet(endpoint: string, transaction: object, custom: { shop_invoked: string; lang: string },): Promise<NovalnetReply> {
   const accessKey = getConfig().novalnetPrivateKey;
   requireValue(accessKey, "Novalnet Access Key is missing.");
   const controller = new AbortController();
@@ -129,7 +129,7 @@ async function callNovalnet(endpoint: string, transaction: object): Promise<Nova
         Accept: "application/json",
         "X-NN-Access-Key": Buffer.from(accessKey).toString("base64"),
       },
-      body: JSON.stringify({ transaction }),
+      body: JSON.stringify({ transaction, custom }),
     });
     if (!response.ok) throw new Error(`Novalnet HTTP ${response.status}`);
     // A TID can exceed JS's safe integer range. Preserve it as a string.
@@ -382,7 +382,10 @@ export async function executePaymentIntent(
     kind === "cancel" ? "/transaction/cancel" : "/transaction/refund";
   const transaction: { tid: string; amount?: number } = { tid: reference.tid };
   if (action.action === "refundPayment") transaction.amount = action.amount.centAmount;
-  const reply = await callNovalnet(endpoint, transaction);
+  const reply = await callNovalnet(endpoint, transaction, {
+    shop_invoked: "1",
+    lang: localeOf(payment, reference).toUpperCase(),
+  });
   if (kind !== "refund" && reply.transaction?.tid &&
       String(reply.transaction.tid) !== reference.tid) {
     throw new Error("Novalnet response TID does not match the original transaction.");
