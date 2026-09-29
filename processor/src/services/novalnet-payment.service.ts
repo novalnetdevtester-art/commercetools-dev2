@@ -1266,9 +1266,14 @@ private getTransactionStatus(status?: string): {
   switch (String(status ?? "").toUpperCase()) {
 
     case "PENDING":
-    case "ON_HOLD":
       return {
         state: "Pending",
+        transactionType: "Authorization",
+      };
+
+    case "ON_HOLD":
+      return {
+        state: "Success",
         transactionType: "Authorization",
       };
 
@@ -2487,7 +2492,7 @@ private async handleTransactionUpdate(
     pspReference,
     transactionComments,
     statusCode,
-    state: status === "CONFIRMED" ? "Success" : "Pending",
+    state: status === "CONFIRMED" || status === "ON_HOLD" ? "Success" : "Pending",
     appendComments: true,
     setCustomType: true,
     errorMessage: "Authorization transaction not found",
