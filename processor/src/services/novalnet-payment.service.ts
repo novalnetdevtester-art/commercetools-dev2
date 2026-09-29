@@ -60,6 +60,11 @@ type TransactionCommentParams = {
   dueDate?: string | null;
 };
 
+type OrderStates = {
+  orderState: "Open" | "Confirmed" | "Cancelled";
+  paymentState: "Pending" | "Paid" | "BalanceDue" | "CreditOwed" | "Failed";
+};
+
 function getNovalnetConfigValues(
   type: string,
   config: Record<string, any>,
@@ -1288,103 +1293,78 @@ private getTransactionStatus(status?: string): {
 }
 		
 private mapNovalnetOrderStates({
-	  status,
-	  eventType,
-	  isPartialCredit = false,
-	  isPartialRefund = false,
-	}: {
-	  status?: string;
-	  eventType?: string;
-	  isPartialCredit?: boolean;
-	  isPartialRefund?: boolean;
-	}): {
-	  orderState: "Open" | "Confirmed" | "Cancelled";
-	  paymentState:
-	    | "Pending"
-	    | "Paid"
-	    | "BalanceDue"
-	    | "CreditOwed"
-	    | "Failed";
-	} {
-	
-	  const paymentStatus = String(status ?? "").toUpperCase();
-	  const event = String(eventType ?? "").toUpperCase();
-	
-	  switch (event) {
-	
-	    case "TRANSACTION_CAPTURE":
-	      return {
-	        orderState: "Confirmed",
-	        paymentState: "Paid",
-	      };
-	
-	    case "TRANSACTION_CANCEL":
-	    case "CHARGEBACK":
-	    case "RETURN_DEBIT":
-	    case "REVERSAL":
-	      return {
-	        orderState: "Cancelled",
-	        paymentState: "Failed",
-	      };
-	
-	    case "CREDIT":
-	      return isPartialCredit
-	        ? {
-	            orderState: "Open",
-	            paymentState: "BalanceDue",
-	          }
-	        : {
-	            orderState: "Confirmed",
-	            paymentState: "Paid",
-	          };
-	
-	    case "TRANSACTION_REFUND":
-	      return isPartialRefund
-	        ? {
-	            orderState: "Confirmed",
-	            paymentState: "CreditOwed",
-	          }
-	        : {
-	            orderState: "Confirmed",
-	            paymentState: "CreditOwed",
-	          };
-	
-	    case "TRANSACTION_UPDATE":
-	      return {
-	        orderState: "Confirmed",
-	        paymentState: "Paid",
-	      };
-	  }
-	
-	  switch (paymentStatus) {
-	
-	    case "CONFIRMED":
-	      return {
-	        orderState: "Confirmed",
-	        paymentState: "Paid",
-	      };
-	
-	    case "PENDING":
-	    case "ON_HOLD":
-	      return {
-	        orderState: "Open",
-	        paymentState: "Pending",
-	      };
-	
-	    case "FAILURE":
-	    case "CANCELLED":
-	      return {
-	        orderState: "Cancelled",
-	        paymentState: "Failed",
-	      };
-	
-	    default:
-	      return {
-	        orderState: "Open",
-	        paymentState: "Pending",
-	      };
-	  }
-	}
+  status,
+  eventType,
+  isPartialCapture = false,
+  isPartialCredit = false,
+  isPartialCancel = false,
+}: {
+  status?: string;
+  eventType?: string;
+  isPartialCapture?: boolean;
+  isPartialCredit?: boolean;
+  isPartialCancel?: boolean;
+}): OrderStates | null {
+  const paymentStatus = String(status ?? "").toUpperCase();
+  const event = String(eventType ?? "").toUpperCase();
+
+  switch (event) {
+    case "TRANSACTION_CAPTURE":
+      if (paymentStatus !== "CONFIRMED") break;
+      return isPartialCapture
+        ? { orderState: "Open", paymentState: "BalanceDue" }
+        : { orderState: "Confirmed", paymentState: "Paid" };
+    case "TRANSACTION_CANCEL":
+      return isPartialCancel
+        ? { orderState: "Open", paymentState: "BalanceDue" }
+        : { orderState: "Cancelled", paymentState: "Failed" };
+    case "CHARGEBACK":
+    case "RETURN_DEBIT":
+    case "REVERSAL":
+      return { orderState: "Cancelled", paymentState: "Failed" };
+    case "CREDIT":
+      return isPartialCredit
+        ? { orderState: "Open", paymentState: "BalanceDue" }
+        : { orderState: "Confirmed", paymentState: "Paid" };
+    case "TRANSACTION_REFUND":
+      // Keep the connector's refund business mapping; CT has no Refunded state.
+      return { orderState: "Confirmed", paymentState: "CreditOwed" };
+    case "TRANSACTION_UPDATE":
+      // The transaction status, not the event name, determines Paid/Pending.
+      break;
+  }
+
+  switch (paymentStatus) {
+    case "CONFIRMED":
+      return { orderState: "Confirmed", paymentState: "Paid" };
+    case "PENDING":
+    case "ON_HOLD":
+      return { orderState: "Open", paymentState: "Pending" };
+    case "FAILURE":
+    case "CANCELLED":
+      return { orderState: "Cancelled", paymentState: "Failed" };
+    default:
+      return null;
+  }
+}
+
+private async getModificationFlags(paymentId: string, eventType: string): Promise<{
+  isPartialCapture?: boolean;
+  isPartialCancel?: boolean;
+} | null> {
+  if (eventType !== "TRANSACTION_CAPTURE" && eventType !== "TRANSACTION_CANCEL") return {};
+
+  // A capture/cancel event may leave part of the planned amount unsettled.
+  const payment = (await projectApiRoot.payments().withId({ ID: paymentId }).get().execute()).body;
+  const captured = payment.transactions
+    .filter((tx) => tx.type === "Charge" && tx.state === "Success")
+    .reduce((sum, tx) => sum + tx.amount.centAmount, 0);
+  if (eventType === "TRANSACTION_CAPTURE" && captured <= 0) return null;
+  return {
+    isPartialCapture: captured < payment.amountPlanned.centAmount,
+    isPartialCancel: captured > 0 && captured < payment.amountPlanned.centAmount,
+  };
+}
 	
 	private async updateOrderStates({
 	  paymentId,
@@ -1401,7 +1381,13 @@ private mapNovalnetOrderStates({
 	    | "Failed";
 	}): Promise<void> {
 	
-	  const order = await this.getOrderByPaymentId(paymentId);
+	  let order = await this.getOrderByPaymentId(paymentId);
+	  if (!order) {
+	    const orderRef = await this.waitForOrderByPayment(paymentId, 5, 1000);
+	    if (orderRef) {
+	      order = (await projectApiRoot.orders().withId({ ID: orderRef.id }).get().execute()).body;
+	    }
+	  }
 	
 	  if (!order) {
 	    log.warn("[ORDER_STATE] Order not found", { paymentId });
@@ -1873,6 +1859,48 @@ private async processWebhookTransaction({
         skipped: true,
         eventType,
       };
+  }
+
+  // PAYMENT runs once for an initial payment, even when the Payment transaction
+  // was already saved by the direct or redirect flow. The other events update
+  // the Payment in their own handlers. Reconcile the linked Order afterwards so
+  // an already-synchronized Payment does not leave its Order in the old state.
+  if (
+    transactionComments !== "Transaction not found" &&
+    [
+      "PAYMENT",
+      "TRANSACTION_CAPTURE",
+      "TRANSACTION_CANCEL",
+      "TRANSACTION_REFUND",
+      "TRANSACTION_UPDATE",
+      "CHARGEBACK",
+      "RETURN_DEBIT",
+      "REVERSAL",
+    ].includes(eventType)
+  ) {
+    const paymentId = webhook.custom?.["ctpayment-id"] ?? webhook.custom?.inputval1;
+    if (!paymentId) throw new Error("Missing payment reference for Order state update");
+    try {
+      const flags = eventType === "PAYMENT"
+        ? {}
+        : await this.getModificationFlags(paymentId, eventType);
+      if (flags) {
+        const states = this.mapNovalnetOrderStates({
+          status: webhook.transaction?.status,
+          eventType,
+          ...flags,
+        });
+        if (states) await this.updateOrderStates({ paymentId, ...states });
+      }
+    } catch (error) {
+      // The Payment was already processed. A failed Order update must not
+      // replay a capture, credit, or refund when Novalnet retries this event.
+      log.error("[ORDER_STATE] State synchronization failed", {
+        paymentId,
+        eventType,
+        error,
+      });
+    }
   }
 
   log.info("Webhook processed", {
@@ -2708,6 +2736,23 @@ private async handleTransactionUpdate(
       },
     },
   );
+
+  try {
+    // CREDIT uses the cumulative credited amount calculated above. Its
+    // settlement Charge can represent only the last credit notification.
+    const states = this.mapNovalnetOrderStates({
+      status: webhook.transaction?.status,
+      eventType: "CREDIT",
+      isPartialCredit: !fullyPaid,
+    });
+    if (states) await this.updateOrderStates({ paymentId, ...states });
+  } catch (error) {
+    log.error("[ORDER_STATE] Credit state synchronization failed", {
+      paymentId,
+      eventTID,
+      error,
+    });
+  }
 
   log.info("[CREDIT] Credit state saved", {
     paymentId,
